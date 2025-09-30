@@ -1,0 +1,12 @@
+_build
+*.pvd
+*.h5
+*.xdmf
+*.vtu
+*/.ipynb_checkpoints/*
+.ipynb_checkpoints/*
+**/.cache
+*.png
+*.pvtu
+*.msh
+*.bp
