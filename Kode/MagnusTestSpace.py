@@ -112,16 +112,6 @@ diff = uh - u_exact(x)
 error = ufl.inner(diff, diff) * ufl.dx
 print(f"L2 error: {np.sqrt(assemble_scalar(error)):.2e}")
 
-# %% plotting (doesnt work for me)
-vtk_mesh = dolfinx.plot.vtk_mesh(V)
-grid = pyvista.UnstructuredGrid(*vtk_mesh)
-grid.point_data["u"] = uh.x.array.real
-warped = grid.warp_by_scalar("u", factor=1)
-plotter = pyvista.Plotter()
-plotter.add_mesh(grid, style="wireframe")
-plotter.add_mesh(warped)
-if not pyvista.OFF_SCREEN:
-    plotter.show()
 # %% matplotlib plotting as per chatGPT
 import matplotlib.pyplot as plt
 coords = mesh.geometry.x.copy()       # shape (num_vertices, 2)
@@ -148,4 +138,36 @@ plt.ylabel("y")
 plt.title("FEM solution u")
 plt.axis("equal")
 plt.show()
+# %% u on the boundary ===================================
+# mesh.geometry.x: all vertex coordinates
+coords_all = mesh.geometry.x
+
+# Find boundary vertices (distance from origin ~ R)
+tol = 1e-12
+b_vertices = np.where(np.abs(np.linalg.norm(coords_all, axis=1) - 1.0) < tol)[0]
+
+# Coordinates of boundary vertices
+coords = coords_all[b_vertices]
+
+# FEM solution at boundary vertices
+u_boundary = uh.x.array[b_vertices]
+
+# Compute angles for sorting
+theta = np.arctan2(coords[:,1], coords[:,0])
+# Shift angles so they are in [0, 2pi)
+theta = (theta + 2*np.pi) % (2*np.pi)
+sort_idx = np.argsort(theta)
+theta_sorted = theta[sort_idx]
+u_sorted = u_boundary[sort_idx]
+
+
+# %%
+# Number of points for FFT
+N = len(u_sorted)
+u_hat = np.fft.fft(u_sorted) / N  # no roll
+freqs = np.fft.fftfreq(N, d=(2*np.pi)/N)
+
+a_k = 2 * np.real(u_hat)   # cosine coefficients
+b_k = -2 * np.imag(u_hat)  # sine coefficients
+
 # %%
