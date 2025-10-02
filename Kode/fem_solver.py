@@ -20,18 +20,29 @@ from dolfinx.fem.petsc import apply_lifting, set_bc
 
 
 class FemConductivitySolver:
-    def __init__(self, mesh_characteristic_length=0.05):
-        self.mesh_characteristic_length = mesh_characteristic_length
-        self.mesh = None
-        self.V = None
-        self.conductivity = None
-        self.uh = None
-        self.A = None
-        self.b = None
-        self.xh = None
-        self.ksp = None
-        self.W = None
-        self._setup_mesh()
+    def __init__(self, mesh_characteristic_length=0.05, mesh=None):
+        if mesh is None:
+            self.mesh_characteristic_length = mesh_characteristic_length
+            self.mesh = None
+            self.V = None
+            self.conductivity = None
+            self.uh = None
+            self.A = None
+            self.b = None
+            self.xh = None
+            self.ksp = None
+            self.W = None
+            self._setup_mesh()
+        else:
+            self.mesh = mesh
+            self.V = functionspace(mesh, ("Lagrange", 1))
+            self.conductivity = None
+            self.uh = None
+            self.A = None
+            self.b = None
+            self.xh = None
+            self.ksp = None
+            self.W = None
 
     def _setup_mesh(self):
         """Create the unit disk mesh"""
@@ -118,27 +129,6 @@ class FemConductivitySolver:
                 self.conductivity.x.array[dof * 4 + 1] = k12
                 self.conductivity.x.array[dof * 4 + 2] = k12  # symmetric
                 self.conductivity.x.array[dof * 4 + 3] = k22
-
-    def set_constant_conductivity(self, kappa_0=1.0, kappa_1=0.1):
-        """
-        Convenience method for constant conductivity in each subdomain
-        """
-
-        def Omega_0(x):
-            return np.sqrt(x[1] ** 2 + x[0] ** 2) <= 0.5
-
-        def Omega_1(x):
-            return np.sqrt(x[1] ** 2 + x[0] ** 2) > 0.5
-
-        def conductivity_Omega_0(x, y):
-            return kappa_0, 0.0, kappa_0  # k11, k12, k22
-
-        def conductivity_Omega_1(x, y):
-            return kappa_1, 0.0, kappa_1  # k11, k12, k22
-
-        self.set_conductivity(
-            Omega_0, Omega_1, conductivity_Omega_0, conductivity_Omega_1
-        )
 
     def assemble_system(self, boundary_flux=None):
         """
@@ -276,13 +266,15 @@ class FemConductivitySolver:
         error = ufl.inner(diff, diff) * ufl.dx
         return np.sqrt(assemble_scalar(error))
 
-    def plot_solution(self):
-        """Plot the solution using matplotlib"""
+    def plot_solution(self, title="FEM solution u"):
         import matplotlib.pyplot as plt
         import matplotlib.tri as tri
 
         if self.uh is None:
             raise ValueError("No solution to plot")
+
+        # Create figure and axis
+        fig, ax = plt.subplots(figsize=(6, 5))
 
         coords = self.mesh.geometry.x.copy()
         cells = self.mesh.topology.connectivity(
@@ -295,15 +287,19 @@ class FemConductivitySolver:
 
         triang = tri.Triangulation(x, y, cells)
 
-        plt.figure(figsize=(6, 5))
-        cont = plt.tricontourf(triang, u_vals, levels=50, cmap="viridis")
-        plt.colorbar(cont, label="u")
-        plt.tricontour(triang, u_vals, levels=10, colors="k", linewidths=0.5)
-        plt.xlabel("x")
-        plt.ylabel("y")
-        plt.title("FEM solution u")
-        plt.axis("equal")
-        plt.show()
+        # Create the plot
+        cont = ax.tricontourf(triang, u_vals, levels=50, cmap="viridis")
+        ax.tricontour(triang, u_vals, levels=10, colors="k", linewidths=0.5)
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_title(title)
+        ax.axis("equal")
+
+        # Add colorbar
+        fig.colorbar(cont, ax=ax, label="u")
+
+        # Return the plot objects WITHOUT showing
+        return fig, ax
 
     def get_solution(self):
         """Return the solution function"""
