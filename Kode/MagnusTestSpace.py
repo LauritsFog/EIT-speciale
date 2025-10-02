@@ -32,7 +32,7 @@ mesh, cell_markers, facet_markers = gmshio.model_to_mesh(
 
 V = dolfinx.fem.functionspace(mesh, ("Lagrange", 1))
 #%% setting up functions 
-# div(grad(u)) = 0 in Omega
+# div(Conductivity*grad(u)) = 0 in Omega
 # du/dn = f on dOmega
 # int_dOmega u dx = 0
 def u_exact(x):
@@ -40,7 +40,9 @@ def u_exact(x):
 x = ufl.SpatialCoordinate(mesh)
 #n = ufl.FacetNormal(mesh)
 theta = ufl.atan2(x[1], x[0])
-f = ufl.cos(theta)
+f = 2 * ufl.cos(theta) + ufl.sin(theta)
+Conductivity = ufl.as_matrix([[2.0, 1.0],
+                   [1.0, 3.0]])
 # %% create function space for real numbers and mixed function space
 R = create_real_functionspace(mesh)
 W = ufl.MixedFunctionSpace(V, R)
@@ -50,7 +52,7 @@ du, dl = ufl.TestFunctions(W)
 #%% defining variational problem
 zero = dolfinx.fem.Constant(mesh, dolfinx.default_scalar_type(0.0))
 
-a00 = ufl.inner(ufl.grad(u), ufl.grad(du)) * ufl.dx
+a00 = ufl.inner(Conductivity * ufl.grad(u), ufl.grad(du)) * ufl.dx
 a01 = ufl.inner(lmbda, du) * ufl.ds
 a10 = ufl.inner(u, dl) * ufl.ds
 L0 = ufl.inner(f, du) * ufl.ds
