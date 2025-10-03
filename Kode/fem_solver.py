@@ -19,6 +19,7 @@ from scifem import create_real_functionspace
 from dolfinx.fem.petsc import apply_lifting, set_bc
 from dolfinx.mesh import locate_entities_boundary
 import matplotlib.pyplot as plt
+import matplotlib.tri as tri
 
 
 class FemConductivitySolver:
@@ -34,7 +35,9 @@ class FemConductivitySolver:
             self.xh = None
             self.ksp = None
             self.W = None
-            self._setup_mesh()
+            self.boundary_vertices = None  # Initialize
+            self.boundary_coords = None  # Initialize
+            self.setup_mesh()
         else:
             self.mesh = mesh
             self.V = functionspace(mesh, ("Lagrange", 1))
@@ -45,8 +48,11 @@ class FemConductivitySolver:
             self.xh = None
             self.ksp = None
             self.W = None
+            self.boundary_vertices = None  # Initialize
+            self.boundary_coords = None  # Initialize
+            self.setup_boundary_data()  # Setup boundary data for existing mesh
 
-    def _setup_mesh(self):
+    def setup_mesh(self):
         """Create the unit disk mesh"""
         gmsh.initialize()
 
@@ -76,6 +82,22 @@ class FemConductivitySolver:
 
         # Create function space
         self.V = functionspace(self.mesh, ("Lagrange", 1))
+
+        # Setup boundary data
+        self.setup_boundary_data()
+
+    def setup_boundary_data(self):
+        """Find and save boundary vertices and coordinates"""
+        coords_all = self.mesh.geometry.x
+
+        # Find boundary vertices (distance from origin ~ R)
+        tol = 1e-12
+        self.boundary_vertices = np.where(
+            np.abs(np.linalg.norm(coords_all, axis=1) - 1.0) < tol
+        )[0]
+
+        # Coordinates of boundary vertices
+        self.boundary_coords = coords_all[self.boundary_vertices]
 
     def set_conductivity(
         self, Omega_0, Omega_1, conductivity_Omega_0, conductivity_Omega_1
@@ -132,7 +154,7 @@ class FemConductivitySolver:
                 self.conductivity.x.array[dof * 4 + 2] = k12  # symmetric
                 self.conductivity.x.array[dof * 4 + 3] = k22
 
-    def assemble_system(self, boundary_flux):
+    def assemble_system(self, neumann_cond):
         """
         Assemble the linear system A*x = b
         """
@@ -141,10 +163,10 @@ class FemConductivitySolver:
             self.set_constant_conductivity()
 
         # Store the boundary flux for later use
-        self.boundary_flux = boundary_flux
+        self.neumann_cond = neumann_cond
 
         # Set up boundary flux
-        f = boundary_flux
+        f = neumann_cond
 
         # Create mixed function space for real numbers
         R = create_real_functionspace(self.mesh)
@@ -242,29 +264,10 @@ class FemConductivitySolver:
         if self.ksp is not None:
             self.ksp.destroy()
 
-    def compute_error(self, exact_solution=None):
-        """Compute L2 error against exact solution"""
-        if self.uh is None:
-            raise ValueError("Must solve the problem first")
-
-        if exact_solution is None:
-            # Default exact solution: u(x,y) = x
-
-            raise ValueError("Supply exact_solution function")
-
-            exact_solution = Function(self.V)
-            exact_solution.interpolate(lambda x: x[0])
-
-        diff = self.uh - exact_solution
-        error = ufl.inner(diff, diff) * ufl.dx
-        return np.sqrt(assemble_scalar(error))
-
     def compute_ntd_map(self, max_freq=None):
         """Compute Neumann-to-Dirichlet map with ordering [a_N,...,a₁, b₁,...,b_N]"""
-        import numpy as np
-        import ufl
 
-        theta_sorted, u_sorted, coords_sorted = self.get_sorted_boundary_solution()
+        theta_sorted, u_sorted, coords_sorted = self.get_ordered_boundary_solution()
         N = len(u_sorted)
 
         if max_freq is None:
@@ -292,10 +295,10 @@ class FemConductivitySolver:
             theta = ufl.atan2(x[1], x[0])
             nc_mode = ufl.cos(n * theta)
 
-            self.assemble_system(boundary_flux=nc_mode)
+            self.assemble_system(neumann_cond=nc_mode)
             self.solve_system()
 
-            coefficients, _ = self.get_boundary_fourier_coefficients_ordered(max_freq)
+            coefficients, _ = self.get_boundary_solution_fourier_coefficients(max_freq)
             ntd_matrix[:, j] = coefficients
 
         # Sine input modes (next N columns) in forward order
@@ -308,72 +311,15 @@ class FemConductivitySolver:
             theta = ufl.atan2(x[1], x[0])
             nc_mode = ufl.sin(n * theta)
 
-            self.assemble_system(boundary_flux=nc_mode)
+            self.assemble_system(neumann_cond=nc_mode)
             self.solve_system()
 
-            coefficients, _ = self.get_boundary_fourier_coefficients_ordered(max_freq)
+            coefficients, _ = self.get_boundary_solution_fourier_coefficients(max_freq)
             ntd_matrix[:, col_idx] = coefficients
 
         return ntd_matrix, n_values
 
-    # def compute_ntd_map(self, max_freq=None):
-    #     """Compute Neumann-to-Dirichlet map in Fourier basis
-
-    #     For each Fourier basis function, solve the problem and store the resulting
-    #     boundary solution's Fourier coefficients in a column of the NtD matrix
-
-    #     Returns:
-    #     --------
-    #     ntd_matrix : numpy.ndarray
-    #         2N x 2N complex matrix where column j contains the Fourier coefficients
-    #         of the solution when Neumann condition is the j-th Fourier mode in the ordering
-    #         [-N, ..., -1, 1, ..., N]
-    #     n_values : numpy.ndarray
-    #         The n values corresponding to columns
-    #     """
-
-    #     theta_sorted, u_sorted, coords_sorted = self.get_sorted_boundary_solution()
-    #     N = len(u_sorted)
-
-    #     if max_freq is None:
-    #         max_freq = N // 2
-
-    #     n_values = np.concatenate([np.arange(-max_freq, 0), np.arange(1, max_freq + 1)])
-    #     num_modes = len(n_values)
-
-    #     ntd_matrix = np.zeros((num_modes, num_modes), dtype=complex)
-
-    #     for j, n in enumerate(n_values):
-    #         print(f"Processing mode {n}")
-
-    #         # For complex basis, we'd ideally use complex Neumann conditions
-    #         # But FEniCSx can't handle complex-valued forms directly
-    #         # So we approximate by solving two real problems:
-
-    #         # Real part: cos(nθ)
-    #         x = ufl.SpatialCoordinate(self.mesh)
-    #         theta = ufl.atan2(x[1], x[0])
-    #         nc_real = ufl.cos(n * theta)
-
-    #         self.assemble_system(boundary_flux=nc_real)
-    #         self.solve_system()
-    #         c_n_real, _ = self.get_boundary_fourier_coefficients_ordered()
-
-    #         # Imaginary part: -sin(nθ)
-    #         nc_imag = -ufl.sin(n * theta)
-
-    #         self.assemble_system(boundary_flux=nc_imag)
-    #         self.solve_system()
-    #         c_n_imag, _ = self.get_boundary_fourier_coefficients_ordered()
-
-    #         # Combine: e^{-i n theta} = cos(nθ) - i sin(nθ)
-    #         ntd_matrix[:, j] = c_n_real[:num_modes] + 1j * c_n_imag[:num_modes]
-
-    #     return ntd_matrix, n_values
-
     def plot_solution(self, title="FEM solution u"):
-        import matplotlib.tri as tri
-
         if self.uh is None:
             raise ValueError("No solution to plot")
 
@@ -405,7 +351,7 @@ class FemConductivitySolver:
         # Return the plot objects WITHOUT showing
         return fig, ax
 
-    def plot_boundary_solution_with_flux(
+    def plot_boundary_solution_with_neumann_cond(
         self, title="Boundary solution and Neumann condition"
     ):
         """Plot the boundary solution and Neumann flux together"""
@@ -413,17 +359,17 @@ class FemConductivitySolver:
         if self.uh is None:
             raise ValueError("No solution to plot")
 
-        if not hasattr(self, "boundary_flux") or self.boundary_flux is None:
+        if not hasattr(self, "neumann_cond") or self.neumann_cond is None:
             raise ValueError("No boundary flux stored. Call assemble_system() first.")
 
         # Create figure and axis
         fig, ax = plt.subplots(figsize=(10, 5))
 
         # Get sorted boundary solutoin
-        theta_sorted, u_sorted, coords_sorted = self.get_sorted_boundary_solution()
+        theta_sorted, u_sorted, coords_sorted = self.get_ordered_boundary_solution()
 
         # Get sorted boundary flux
-        theta_flux, flux_sorted, coords_flux = self.get_boundary_flux_values()
+        theta_flux, flux_sorted, coords_flux = self.get_ordered_neumann_cond()
 
         # Create the plot
         ax.plot(
@@ -445,10 +391,10 @@ class FemConductivitySolver:
         # Return the plot objects WITHOUT showing
         return fig, ax
 
-    def plot_fourier_coefficients_ordered(self, max_freq=None):
+    def plot_fourier_coefficients(self, max_freq=None):
         """Plot the Fourier coefficients in the desired order"""
 
-        c_n, n_values = self.get_boundary_fourier_coefficients_ordered()
+        c_n, n_values = self.get_boundary_solution_fourier_coefficients()
 
         if max_freq is None:
             max_freq = len(n_values) // 2
@@ -463,85 +409,64 @@ class FemConductivitySolver:
         ax.stem(np.abs(c_filtered), basefmt=" ")
         ax.set_xlabel("Frequency (n)")
         ax.set_ylabel("|c_n|")
-        ax.set_title("Fourier Coefficients Magnitude (basis: $e^{-i n \\theta}$)")
+        ax.set_title("Fourier Coefficients Magnitude (basis: sine, cosine)")
         ax.grid(True)
 
         return fig, ax
 
-    def get_sorted_boundary_solution(self):
-        """Extract and sort boundary solution by angle
-
-        Returns:
-        --------
-        theta_sorted : numpy.ndarray
-            Angles in radians sorted from 0 to 2π
-        u_sorted : numpy.ndarray
-            Solution values sorted by angle
-        coords_sorted : numpy.ndarray
-            Boundary coordinates sorted by angle
-        """
-
+    def get_ordered_boundary_solution(self):
+        """Extract and sort boundary solution by angle"""
         if self.uh is None:
             raise ValueError("No solution available")
 
-        coords_all = self.mesh.geometry.x
-
-        # Find boundary vertices (distance from origin ~ R)
-        tol = 1e-12
-        b_vertices = np.where(np.abs(np.linalg.norm(coords_all, axis=1) - 1.0) < tol)[0]
-
-        # Coordinates of boundary vertices
-        coords = coords_all[b_vertices]
+        if self.boundary_vertices is None or self.boundary_coords is None:
+            raise ValueError(
+                "Boundary data not initialized. Call setup_boundary_data() first."
+            )
 
         # FEM solution at boundary vertices
-        u_boundary = self.uh.x.array[b_vertices]
+        u_boundary = self.uh.x.array[self.boundary_vertices]
 
         # Compute angles for sorting
-        theta = np.arctan2(coords[:, 1], coords[:, 0])
+        theta = np.arctan2(self.boundary_coords[:, 1], self.boundary_coords[:, 0])
         # Shift angles so they are in [0, 2π)
         theta = (theta + 2 * np.pi) % (2 * np.pi)
+
         sort_idx = np.argsort(theta)
         theta_sorted = theta[sort_idx]
         u_sorted = u_boundary[sort_idx]
-        coords_sorted = coords[sort_idx]
+        coords_sorted = self.boundary_coords[sort_idx]
 
         return theta_sorted, u_sorted, coords_sorted
 
-    def get_boundary_flux_values(self):
+    def get_ordered_neumann_cond(self):
         """Get the Neumann condition values on the boundary by evaluating the stored UFL expression"""
 
-        if not hasattr(self, "boundary_flux") or self.boundary_flux is None:
+        if not hasattr(self, "neumann_cond") or self.neumann_cond is None:
             raise ValueError("No boundary flux stored. Call assemble_system() first.")
 
-        # Get boundary coordinates
-        coords_all = self.mesh.geometry.x
-        tol = 1e-12
-        b_vertices = np.where(np.abs(np.linalg.norm(coords_all, axis=1) - 1.0) < tol)[0]
-        boundary_coords = coords_all[b_vertices]
-
-        # Create a Function to represent the flux expression
         flux_function = Function(self.V)
 
-        # Create an Expression from the stored boundary_flux and interpolate it
+        # Create an Expression from the stored neumann_cond and interpolate it
         flux_expression = Expression(
-            self.boundary_flux, self.V.element.interpolation_points()
+            self.neumann_cond, self.V.element.interpolation_points()
         )
         flux_function.interpolate(flux_expression)
 
         # Get the flux values at boundary vertices
-        flux_values = flux_function.x.array[b_vertices]
+        flux_values = flux_function.x.array[self.boundary_vertices]
 
         # Sort by angle
-        theta = np.arctan2(boundary_coords[:, 1], boundary_coords[:, 0])
+        theta = np.arctan2(self.boundary_coords[:, 1], self.boundary_coords[:, 0])
         theta = (theta + 2 * np.pi) % (2 * np.pi)
         sort_idx = np.argsort(theta)
         theta_sorted = theta[sort_idx]
         flux_sorted = flux_values[sort_idx]
-        coords_sorted = boundary_coords[sort_idx]
+        coords_sorted = self.boundary_coords[sort_idx]
 
         return theta_sorted, flux_sorted, coords_sorted
 
-    def get_boundary_fourier_coefficients_ordered(self, max_freq=None):
+    def get_boundary_solution_fourier_coefficients(self, max_freq=None):
         """Compute real Fourier coefficients using FFT in ordering [a_N,...,a₁, b₁,...,b_N]
 
         Returns:
@@ -556,7 +481,7 @@ class FemConductivitySolver:
         """
         import numpy as np
 
-        theta_sorted, u_sorted, coords_sorted = self.get_sorted_boundary_solution()
+        theta_sorted, u_sorted, coords_sorted = self.get_ordered_boundary_solution()
         N = len(u_sorted)
 
         if max_freq is None:
@@ -584,48 +509,6 @@ class FemConductivitySolver:
         )
 
         return coefficients, n_values
-
-    # def get_boundary_fourier_coefficients_ordered(self):
-    #     """Compute Fourier coefficients using FFT in ordering [-N, ..., -1, 1, ..., N]
-
-    #     Returns:
-    #     --------
-    #     coefficients : numpy.ndarray
-    #         Real Fourier coefficients ordered as:
-    #         [a_1, a_2, ..., a_N, b_1, b_2, ..., b_N] where:
-    #         - For n < 0: coefficient = a_{|n|} (cosine coefficient for cos(|n|θ))
-    #         - For n > 0: coefficient = b_n (sine coefficient for sin(nθ))
-    #     n_values : numpy.ndarray
-    #         The n values [-N, ..., -1, 1, ..., N]
-    #     """
-
-    #     # Get sorted boundary solution
-    #     theta_sorted, u_sorted, coords_sorted = self.get_sorted_boundary_solution()
-    #     N = len(u_sorted)
-
-    #     # np.fft gives [0,1,2,...,N/2,-1,-2,...,-N/2]
-
-    #     # Compute FFT
-    #     u_hat = np.fft.fft(u_sorted) / N
-
-    #     # Get the desired ordering: [-N, -N+1, ..., -1, 1, 2, ..., N]
-    #     # This means we want all negative frequencies first, then positive frequencies, skipping 0
-    #     n_values = np.concatenate(
-    #         [
-    #             np.arange(-N // 2, 0),  # Negative frequencies: -N/2, ..., -1
-    #             np.arange(1, N // 2 + 1),  # Positive frequencies: 1, 2, ..., N/2
-    #         ]
-    #     )
-
-    #     # Reorder coefficients to match n_values
-    #     c_n_ordered = np.zeros(len(n_values), dtype=complex)
-    #     for i, n in enumerate(n_values):
-    #         if n < 0:
-    #             c_n_ordered[i] = u_hat[n % N]  # Negative frequencies wrap around
-    #         else:
-    #             c_n_ordered[i] = u_hat[n]  # Positive frequencies
-
-    #     return c_n_ordered, n_values
 
     def get_solution(self):
         """Return the solution function"""
