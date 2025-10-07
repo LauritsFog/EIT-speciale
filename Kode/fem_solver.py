@@ -24,32 +24,24 @@ import matplotlib.tri as tri
 
 class FemConductivitySolver:
     def __init__(self, mesh_characteristic_length=0.05, mesh=None):
+        self.conductivity = None
+        self.uh = None
+        self.A = None
+        self.b = None
+        self.xh = None
+        self.ksp = None
+        self.W = None
+        self.boundary_vertices = None  # Initialize
+        self.boundary_coords = None  # Initialize
+        self.ntd_matrix = None
         if mesh is None:
             self.mesh_characteristic_length = mesh_characteristic_length
             self.mesh = None
             self.V = None
-            self.conductivity = None
-            self.uh = None
-            self.A = None
-            self.b = None
-            self.xh = None
-            self.ksp = None
-            self.W = None
-            self.boundary_vertices = None  # Initialize
-            self.boundary_coords = None  # Initialize
             self.setup_mesh()
         else:
             self.mesh = mesh
             self.V = functionspace(mesh, ("Lagrange", 1))
-            self.conductivity = None
-            self.uh = None
-            self.A = None
-            self.b = None
-            self.xh = None
-            self.ksp = None
-            self.W = None
-            self.boundary_vertices = None  # Initialize
-            self.boundary_coords = None  # Initialize
             self.setup_boundary_data()  # Setup boundary data for existing mesh
 
     def setup_mesh(self):
@@ -267,8 +259,7 @@ class FemConductivitySolver:
     def compute_ntd_map(self, max_freq=None):
         """Compute Neumann-to-Dirichlet map with ordering [a_N,...,a₁, b₁,...,b_N]"""
 
-        theta_sorted, u_sorted, coords_sorted = self.get_ordered_boundary_solution()
-        N = len(u_sorted)
+        N = len(self.boundary_coords)
 
         if max_freq is None:
             max_freq = N // 2
@@ -317,6 +308,7 @@ class FemConductivitySolver:
             coefficients, _ = self.get_boundary_solution_fourier_coefficients(max_freq)
             ntd_matrix[:, col_idx] = coefficients
 
+        self.ntd_matrix = ntd_matrix
         return ntd_matrix, n_values
 
     def plot_solution(self, title="FEM solution u"):
