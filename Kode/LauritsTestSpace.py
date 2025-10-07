@@ -19,23 +19,18 @@ def my_Omega_1(x):
 
 
 def my_conductivity_Omega_0(x, y):
-    k11 = 1.0
+    k11 = 4
     k12 = 0
-    k22 = 1.0
+    k22 = 4
     return k11, k12, k22
 
 
 def my_conductivity_Omega_1(x, y):
-    k11 = 0.2
+    k11 = 0.1
     k12 = 0
-    k22 = 0.4
+    k22 = 0.1
     return k11, k12, k22
 
-
-# Plot conductivity components (now properly masked)
-fig_components, axes_components = plot_conductivity_components(
-    my_Omega_0, my_Omega_1, my_conductivity_Omega_0, my_conductivity_Omega_1
-)
 
 # Set conductivity with custom functions
 solver1.set_conductivity(
@@ -45,11 +40,17 @@ solver1.set_conductivity(
     conductivity_Omega_1=my_conductivity_Omega_1,
 )
 
+# Plot conductivity components
+# fig_components, axes_components = plot_conductivity_components(
+#     my_Omega_0, my_Omega_1, my_conductivity_Omega_0, my_conductivity_Omega_1
+# )
+
+fig_components, axes_components = solver1.plot_conductivity_components()
 
 # Solve with different boundary fluxes by modifying b
 x = ufl.SpatialCoordinate(solver1.get_mesh())
 
-nc = ufl.cos(ufl.atan2(x[1], x[0]))  # Neumann condition (flux) on boundary
+nc = ufl.cos(3 * ufl.atan2(x[1], x[0]))  # Neumann condition (flux) on boundary
 
 # Re-assemble only the RHS with new flux
 solver1.assemble_system(neumann_cond=nc)
@@ -98,12 +99,11 @@ solver2.plot_fourier_coefficients(max_freq=10)
 
 ntd, n_values = solver2.compute_ntd_map(max_freq=5)
 
+print(np.diag(ntd))
+
 # Check if symmetric (should be for self-adjoint operators)
 symmetry_error = np.linalg.norm(ntd - ntd.conj().T) / np.linalg.norm(ntd)
 print(f"Symmetry error: {symmetry_error:.2e}")
-
-eigenvalues = np.linalg.eigvals(ntd)
-print("Eigenvalues of NTD matrix:", eigenvalues)
 
 plt.show()
 

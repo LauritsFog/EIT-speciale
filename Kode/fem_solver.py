@@ -414,6 +414,85 @@ class FemConductivitySolver:
 
         return fig, ax
 
+    def plot_conductivity_components(self, title="Conductivity Tensor Components"):
+        """
+        Plot the three components of the anisotropic conductivity tensor.
+        For conductivity matrix [a b; b c], plots a, b, and c separately.
+        """
+        if self.conductivity is None:
+            raise ValueError("Conductivity not set. Call set_conductivity() first.")
+
+        # Create figure with 3 subplots
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+        # Get mesh coordinates and connectivity
+        coords = self.mesh.geometry.x.copy()
+        cells = self.mesh.topology.connectivity(
+            self.mesh.topology.dim, 0
+        ).array.reshape(-1, self.mesh.topology.dim + 1)
+
+        x = coords[:, 0]
+        y = coords[:, 1]
+
+        # Extract conductivity components at vertices
+        conductivity_array = self.conductivity.x.array.reshape(-1, 4)
+
+        # For each vertex, extract the components [a, b, b, c]
+        a_vals = conductivity_array[:, 0]  # k11 component
+        b_vals = conductivity_array[:, 1]  # k12 component (off-diagonal)
+        c_vals = conductivity_array[:, 3]  # k22 component
+
+        # Calculate collective min and max across all components
+        all_vals = np.concatenate([a_vals, b_vals, c_vals])
+        vmin = np.min(all_vals)
+        vmax = np.max(all_vals)
+
+        levels = np.linspace(vmin, vmax + 1e-10, 100)
+
+        # Create triangulation
+        triang = tri.Triangulation(x, y, cells)
+
+        # Plot k11 component with shared color limits
+        cont1 = axes[0].tricontourf(
+            triang, a_vals, levels=levels, cmap="viridis", vmin=vmin, vmax=vmax
+        )
+        # Add black triangle edges
+        axes[0].triplot(triang, color="black", linewidth=0.5, alpha=0.5)
+        axes[0].set_title(r"$k_{11}$ Component")
+        axes[0].set_xlabel("x")
+        axes[0].set_ylabel("y")
+        axes[0].axis("equal")
+        plt.colorbar(cont1, ax=axes[0], label=r"$k_{11}$")
+
+        # Plot k12 component with shared color limits
+        cont2 = axes[1].tricontourf(
+            triang, b_vals, levels=levels, cmap="viridis", vmin=vmin, vmax=vmax
+        )
+        # Add black triangle edges
+        axes[1].triplot(triang, color="black", linewidth=0.5, alpha=0.5)
+        axes[1].set_title(r"$k_{12}$ Component")
+        axes[1].set_xlabel("x")
+        axes[1].set_ylabel("y")
+        axes[1].axis("equal")
+        plt.colorbar(cont2, ax=axes[1], label=r"$k_{12}$")
+
+        # Plot k22 component with shared color limits
+        cont3 = axes[2].tricontourf(
+            triang, c_vals, levels=levels, cmap="viridis", vmin=vmin, vmax=vmax
+        )
+        # Add black triangle edges
+        axes[2].triplot(triang, color="black", linewidth=0.5, alpha=0.5)
+        axes[2].set_title(r"$k_{22}$ Component")
+        axes[2].set_xlabel("x")
+        axes[2].set_ylabel("y")
+        axes[2].axis("equal")
+        plt.colorbar(cont3, ax=axes[2], label=r"$k_{22}$")
+
+        fig.suptitle(title, fontsize=16)
+        plt.tight_layout()
+
+        return fig, axes
+
     def get_ordered_boundary_solution(self):
         """Extract and sort boundary solution by angle"""
         if self.uh is None:
