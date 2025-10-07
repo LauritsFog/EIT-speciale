@@ -10,7 +10,9 @@ import ufl
 import pyvista
 from dolfinx.io import gmshio
 import gmsh
+import matplotlib.pyplot as plt
 
+#%%
 gmsh.initialize()
 #%% create unit disk mesh with gmsh
 unitdisk = gmsh.model.occ.addDisk(0, 0, 0, 1, 1)
@@ -170,4 +172,144 @@ freqs = np.fft.fftfreq(N, d=(2*np.pi)/N)
 a_k = 2 * np.real(u_hat)   # cosine coefficients
 b_k = -2 * np.imag(u_hat)  # sine coefficients
 
+# %% ==================================================
+from fem_solver import FemConductivitySolver
+
+solverA0 = FemConductivitySolver()
+
+def my_conductivity_A0(x, y):
+    k11 = 1
+    k12 = 0
+    k22 = 1
+    return k11, k12, k22
+
+def my_conductivity_AD(x, y):
+    k11, k12, k22 = my_conductivity_A0(x, y)
+    if x**2 + y**2 < 0.5:
+        k11 += 10
+        k22 += 5        
+    return k11, k12, k22
+
+
+# Set conductivity with custom functions
+solverA0.set_conductivity(
+    my_conductivity_A0
+)
+
+solverA0.compute_ntd_map(max_freq=10)
+
+mesh = solverA0.mesh
+
+solverAD = FemConductivitySolver(mesh=mesh)
+solverAD.set_conductivity(
+    my_conductivity_AD
+)
+solverAD.compute_ntd_map(max_freq=10)
+
+ntd_A0 = solverA0.ntd_matrix
+ntd_AD = solverAD.ntd_matrix
+# %%
+def plot_mesh_2d_highlight_elements(mesh, element_indices):
+    """
+    Plot 2D mesh with highlighted elements using matplotlib
+    
+    Parameters:
+    -----------
+    mesh : dolfinx.mesh.Mesh
+        The mesh
+    element_indices : list or int
+        List of element indices to highlight, or single index
+    """
+    # Convert single index to list for uniform handling
+    if isinstance(element_indices, int):
+        element_indices = [element_indices]
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Plot the entire mesh
+    topology = mesh.topology
+    tdim = topology.dim
+    cells = topology.connectivity(tdim, 0).array.reshape(-1, tdim+1)
+    vertices = mesh.geometry.x
+    
+    # Plot all cells (background mesh)
+    for cell in cells:
+        poly = plt.Polygon(vertices[cell][:, :2], fill=None, edgecolor='black', alpha=0.3)
+        ax.add_patch(poly)
+    
+    # Highlight the specified elements in red
+    for element_index in element_indices:
+        if element_index < len(cells):
+            highlight_cell = cells[element_index]
+            poly_highlight = plt.Polygon(vertices[highlight_cell][:, :2], 
+                                       fill=True, color='red', alpha=0.7)
+            ax.add_patch(poly_highlight)
+        else:
+            print(f"Warning: Element index {element_index} out of range (0-{len(cells)-1})")
+    
+    # Set plot properties
+    ax.set_aspect('equal')
+    ax.autoscale_view()
+    
+    title = f"Mesh with {len(element_indices)} highlighted elements"
+    if len(element_indices) == 1:
+        title = f"Mesh with highlighted element {element_indices[0]}"
+    plt.title(title)
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.show()
+#%%
+plot_mesh_2d_highlight_elements(mesh, 0)
+
+#%%
+# Usage for 2D mesh
+element_index = 0  # Index of the element to highlight
+solutions_A0 = solverA0.basis_solutions
+
+# Create mesh tags marking only the target element
+ct = dolfinx.mesh.meshtags(mesh, mesh.topology.dim, 
+                  np.array([element_index], dtype=np.int32), 
+                  np.array([1], dtype=np.int32))
+
+# Define the integration measure restricted to the single element
+dx_single = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
+
+N = len(solutions_A0)
+Dfrechet = np.empty((N, N))
+
+const = 10
+for i in range(N):
+    for j in range(N):
+        ui = solutions_A0[i]
+        uj = solutions_A0[j]
+        integrand = -const*ufl.dot(ufl.grad(ui), ufl.grad(uj))
+        Dfrechet[i, j] = dolfinx.fem.assemble_scalar(dolfinx.fem.form(integrand * dx_single(1)))
+
+check = Dfrechet - ntd_AD + ntd_A0
+print(min(np.linalg.eigvals(check)))
+
+# %%
+num_elements = mesh.topology.index_map(mesh.topology.dim).size_local
+inclusion_indexes = []
+for elem in range(num_elements):
+    if elem % 10 == 0:
+        if elem % 50 == 0:
+            print(f"Element {elem}/{num_elements}")
+        ct = dolfinx.mesh.meshtags(mesh, mesh.topology.dim, 
+                        np.array([elem], dtype=np.int32), 
+                        np.array([1], dtype=np.int32))
+        dx_single = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
+        Dfrechet = np.empty((N, N))
+        const = 10
+        for i in range(N):
+            for j in range(N):
+                ui = solutions_A0[i]
+                uj = solutions_A0[j]
+                integrand = -const*ufl.dot(ufl.grad(ui), ufl.grad(uj))
+                Dfrechet[i, j] = dolfinx.fem.assemble_scalar(dolfinx.fem.form(integrand * dx_single(1)))
+        check = Dfrechet - ntd_AD + ntd_A0
+        if min(np.linalg.eigvals(check)) > 0:
+            inclusion_indexes.append(elem)
+#%%
+plot_mesh_2d_highlight_elements(mesh, inclusion_indexes)
 # %%
