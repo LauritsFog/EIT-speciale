@@ -34,6 +34,8 @@ class FemConductivitySolver:
         self.boundary_vertices = None  # Initialize
         self.boundary_coords = None  # Initialize
         self.ntd_matrix = None
+        self.basis_frequencies = None
+        self.basis_solutions = None
         if mesh is None:
             self.mesh_characteristic_length = mesh_characteristic_length
             self.mesh = None
@@ -91,22 +93,15 @@ class FemConductivitySolver:
         # Coordinates of boundary vertices
         self.boundary_coords = coords_all[self.boundary_vertices]
 
-    def set_conductivity(
-        self, Omega_0, Omega_1, conductivity_Omega_0, conductivity_Omega_1
-    ):
+    def set_conductivity(self, conductivity_func):
         """
-        Set up conductivity tensor with user-defined functions
+        Set up conductivity tensor with a user-defined function
 
         Parameters:
         -----------
-        Omega_0 : function
-            Function that takes coordinates x and returns boolean mask for subdomain 0
-        Omega_1 : function
-            Function that takes coordinates x and returns boolean mask for subdomain 1
-        conductivity_Omega_0 : function
-            Function that takes (x, y) coordinates and returns (k11, k12, k22) for subdomain 0
-        conductivity_Omega_1 : function
-            Function that takes (x, y) coordinates and returns (k11, k12, k22) for subdomain 1
+        conductivity_func : function
+            Function that takes (x, y) coordinates and returns (k11, k12, k22) 
+            for the entire domain
         """
         # Create tensor function space
         V_tensor = functionspace(self.mesh, ("Lagrange", 1, (2, 2)))
@@ -117,30 +112,14 @@ class FemConductivitySolver:
         mesh_geometry = self.mesh.geometry.x
         cell_geometry = self.mesh.geometry.dofmap
 
-        cells_0 = locate_entities(self.mesh, self.mesh.topology.dim, Omega_0)
-        cells_1 = locate_entities(self.mesh, self.mesh.topology.dim, Omega_1)
-
-        # Set values for Omega_0 cells
-        for cell in cells_0:
+        # Iterate over all cells in the mesh
+        for cell in range(self.mesh.topology.index_map(self.mesh.topology.dim).size_local):
             cell_dofs = dofmap.cell_dofs(cell)
             geometry_dofs = cell_geometry[cell]
             for i, dof in enumerate(cell_dofs):
                 coord_idx = geometry_dofs[i // 4]
                 x, y = mesh_geometry[coord_idx][0], mesh_geometry[coord_idx][1]
-                k11, k12, k22 = conductivity_Omega_0(x, y)
-                self.conductivity.x.array[dof * 4 + 0] = k11
-                self.conductivity.x.array[dof * 4 + 1] = k12
-                self.conductivity.x.array[dof * 4 + 2] = k12  # symmetric
-                self.conductivity.x.array[dof * 4 + 3] = k22
-
-        # Set values for Omega_1 cells
-        for cell in cells_1:
-            cell_dofs = dofmap.cell_dofs(cell)
-            geometry_dofs = cell_geometry[cell]
-            for i, dof in enumerate(cell_dofs):
-                coord_idx = geometry_dofs[i // 4]
-                x, y = mesh_geometry[coord_idx][0], mesh_geometry[coord_idx][1]
-                k11, k12, k22 = conductivity_Omega_1(x, y)
+                k11, k12, k22 = conductivity_func(x, y)
                 self.conductivity.x.array[dof * 4 + 0] = k11
                 self.conductivity.x.array[dof * 4 + 1] = k12
                 self.conductivity.x.array[dof * 4 + 2] = k12  # symmetric
@@ -272,6 +251,8 @@ class FemConductivitySolver:
             ]
         )
         num_modes = len(n_values) // 2
+        self.basis_frequencies = n_values # Store frequencies
+        self.basis_solutions = []
 
         ntd_matrix = np.zeros((2 * num_modes, 2 * num_modes), dtype=float)
 
@@ -288,6 +269,7 @@ class FemConductivitySolver:
 
             self.assemble_system(neumann_cond=nc_mode)
             self.solve_system()
+            self.basis_solutions.append(self.uh.copy()) # Store copy of solution
 
             coefficients, _ = self.get_boundary_solution_fourier_coefficients(max_freq)
             ntd_matrix[:, j] = coefficients
@@ -304,13 +286,14 @@ class FemConductivitySolver:
 
             self.assemble_system(neumann_cond=nc_mode)
             self.solve_system()
+            self.basis_solutions.append(self.uh.copy()) # Store copy of solution
 
             coefficients, _ = self.get_boundary_solution_fourier_coefficients(max_freq)
             ntd_matrix[:, col_idx] = coefficients
 
         self.ntd_matrix = ntd_matrix
         return ntd_matrix, n_values
-
+    
     def plot_solution(self, title="FEM solution u"):
         if self.uh is None:
             raise ValueError("No solution to plot")
