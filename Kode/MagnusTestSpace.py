@@ -277,7 +277,7 @@ dx_single = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
 N = len(solutions_A0)
 Dfrechet = np.empty((N, N))
 
-const = 10
+const = 4*(0.5/12)**2
 for i in range(N):
     for j in range(N):
         ui = solutions_A0[i]
