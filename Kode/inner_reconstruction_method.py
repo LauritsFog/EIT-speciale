@@ -135,6 +135,10 @@ def find_inclusion_elements_manual(
     print(f"Sampling {len(sampled_elements)} elements out of {num_elements} total")
 
     inclusion_indexes = []
+
+    inclusion_test_matrix_eigenvalues = []
+    eigenvalue_indeces = []
+
     for idx, elem in enumerate(sampled_elements):
         if idx % 100 == 0:  # Can print less frequently now since it's faster
             print(f"Processing element {idx}/{len(sampled_elements)}")
@@ -165,8 +169,15 @@ def find_inclusion_elements_manual(
                 Dfrechet[i, j] = -const * grad_dot * area
 
         check = Dfrechet - ntd_AD + ntd_A0
+
+        eigenvalue_indeces.append(elem)
+        min_eigenvalue = min(np.linalg.eigvals(check))
+        inclusion_test_matrix_eigenvalues.append(min_eigenvalue)
+
         if min(np.linalg.eigvals(check)) > 0:
             inclusion_indexes.append(elem)
 
+    eigenvalue_dict = dict(zip(eigenvalue_indeces, inclusion_test_matrix_eigenvalues))
+
     print(f"Found {len(inclusion_indexes)} potential inclusion elements")
-    return inclusion_indexes
+    return (inclusion_indexes, eigenvalue_dict)

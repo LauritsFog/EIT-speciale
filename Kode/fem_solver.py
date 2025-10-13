@@ -526,6 +526,10 @@ class FemConductivitySolver:
 
         sort_idx = np.argsort(theta)
         theta_sorted = theta[sort_idx]
+
+        # print("Difference in angles (radians):")
+        # print(np.diff(theta_sorted))
+
         u_sorted = u_boundary[sort_idx]
         coords_sorted = self.boundary_coords[sort_idx]
 

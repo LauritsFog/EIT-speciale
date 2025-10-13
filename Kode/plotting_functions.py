@@ -175,3 +175,69 @@ def plot_highlighted_elements(mesh, element_indices):
     plt.ylabel("y")
 
     return fig, ax
+
+
+def plot_test_matrix_test_matrix_eigenvalues(
+    mesh, eigenvalue_dict, title="All Elements eigenvalue Number Heatmap"
+):
+    """
+    Plot ALL mesh elements colored by eigenvalue number
+
+    Parameters:
+    -----------
+    mesh : dolfinx.mesh.Mesh
+        The mesh
+    eigenvalue_dict : dict
+        Dictionary mapping element_index -> eigenvalue
+    title : str, optional
+        Plot title
+    """
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    topology = mesh.topology
+    tdim = topology.dim
+    cells = topology.connectivity(tdim, 0).array.reshape(-1, tdim + 1)
+    vertices = mesh.geometry.x
+
+    # Get all eigenvalue numbers for normalization
+    all_eigenvalues = list(eigenvalue_dict.values())
+    if all_eigenvalues:
+        vmin = min(all_eigenvalues)
+        vmax = max(all_eigenvalues)
+        norm = plt.Normalize(vmin, vmax)
+        cmap = plt.cm.viridis
+
+        # Plot all cells with color based on eigenvalue number
+        for element_index in range(len(cells)):
+            if element_index in eigenvalue_dict:
+                cond_num = eigenvalue_dict[element_index]
+                color = cmap(norm(cond_num))
+            else:
+                # Elements not in eigenvalue_dict get a default color
+                color = "lightgray"
+
+            poly = plt.Polygon(
+                vertices[cells[element_index]][:, :2],
+                fill=True,
+                color=color,
+                alpha=0.8,
+                edgecolor="black",
+                linewidth=0.5,
+            )
+            ax.add_patch(poly)
+
+        # Add colorbar
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        cbar = plt.colorbar(sm, ax=ax, shrink=0.8)
+        cbar.set_label("Eigenvalue", rotation=270, labelpad=15)
+    else:
+        print("No eigenvalues to plot")
+
+    ax.set_aspect("equal")
+    ax.autoscale_view()
+    plt.title(title)
+    plt.xlabel("x")
+    plt.ylabel("y")
+
+    return fig, ax

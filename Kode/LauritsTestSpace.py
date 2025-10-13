@@ -2,34 +2,38 @@ from fem_solver import FemConductivitySolver
 import matplotlib.pyplot as plt
 import numpy as np
 import ufl
-from plotting_functions import plot_conductivity_components, plot_highlighted_elements
+from plotting_functions import (
+    plot_conductivity_components,
+    plot_highlighted_elements,
+    plot_test_matrix_test_matrix_eigenvalues,
+)
 from inner_reconstruction_method import (
     find_inclusion_elements,
     find_inclusion_elements_manual,
 )
-
-# %% ==================================================
 
 k11_A0 = 1
 k12_A0 = 0
 k22_A0 = 1
 
 k11_AD = 10
+k12_AD = 0
 k22_AD = 10
 
 
 def my_conductivity_A0(x, y):
-    k11 = 1
-    k12 = 0
-    k22 = 1
+    k11 = k11_A0
+    k12 = k12_A0
+    k22 = k22_A0
     return k11, k12, k22
 
 
 def my_conductivity_AD(x, y):
     k11, k12, k22 = my_conductivity_A0(x, y)
     if np.sqrt(x**2 + y**2) <= 0.5:
-        k11 = 10
-        k22 = 10
+        k11 = k11_AD
+        k22 = k22_AD
+        k12 = k12_AD
     return k11, k12, k22
 
 
@@ -67,11 +71,11 @@ solverAD.plot_boundary_solution_with_neumann_cond(
     "Solution $u_f^{\Lambda_A}$ on boundary with Neumann condition"
 )
 
-c_tol = 1
+c_tol = 0
 alpha_tol = 0
 beta_tol = 0
 
-# With diagonal conductivity matrices (AD-A0 >= cI)
+# With diagonal conductivity matrices (AD-A0 >= cI). If c = 0, then AD-A0 = cI i Lo
 c = min(k11_AD, k22_AD) - max(k11_A0, k22_A0) - c_tol
 # Lower bound on AD (alpha I <= AD <= beta I)
 alpha = min(k11_AD, k22_AD) - alpha_tol
@@ -81,7 +85,7 @@ beta = max(k11_AD, k22_AD) + beta_tol
 const = c * (alpha**2) / (beta**2)
 
 # Call the function directly
-inclusion_indexes = find_inclusion_elements_manual(
+inclusion_indexes, test_matrix_eigenvalues = find_inclusion_elements_manual(
     mesh=mesh,
     solutions_A0=solverA0.basis_solutions,
     ntd_AD=ntd_AD,
@@ -92,6 +96,6 @@ inclusion_indexes = find_inclusion_elements_manual(
 
 plot_highlighted_elements(mesh, inclusion_indexes)
 
-plt.show()
+plot_test_matrix_test_matrix_eigenvalues(mesh, test_matrix_eigenvalues)
 
-# %%
+plt.show()
