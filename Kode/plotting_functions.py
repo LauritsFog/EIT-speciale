@@ -118,3 +118,60 @@ def plot_conductivity_components(
     plt.tight_layout()
 
     return fig, axes
+
+
+def plot_highlighted_elements(mesh, element_indices):
+    """
+    Plot 2D mesh with highlighted elements using matplotlib
+
+    Parameters:
+    -----------
+    mesh : dolfinx.mesh.Mesh
+        The mesh
+    element_indices : list or int
+        List of element indices to highlight, or single index
+    """
+    # Convert single index to list for uniform handling
+    if isinstance(element_indices, int):
+        element_indices = [element_indices]
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # Plot the entire mesh
+    topology = mesh.topology
+    tdim = topology.dim
+    cells = topology.connectivity(tdim, 0).array.reshape(-1, tdim + 1)
+    vertices = mesh.geometry.x
+
+    # Plot all cells (background mesh)
+    for cell in cells:
+        poly = plt.Polygon(
+            vertices[cell][:, :2], fill=None, edgecolor="black", alpha=0.3
+        )
+        ax.add_patch(poly)
+
+    # Highlight the specified elements in red
+    for element_index in element_indices:
+        if element_index < len(cells):
+            highlight_cell = cells[element_index]
+            poly_highlight = plt.Polygon(
+                vertices[highlight_cell][:, :2], fill=True, color="red", alpha=0.7
+            )
+            ax.add_patch(poly_highlight)
+        else:
+            print(
+                f"Warning: Element index {element_index} out of range (0-{len(cells) - 1})"
+            )
+
+    # Set plot properties
+    ax.set_aspect("equal")
+    ax.autoscale_view()
+
+    title = f"Mesh with {len(element_indices)} highlighted elements"
+    if len(element_indices) == 1:
+        title = f"Mesh with highlighted element {element_indices[0]}"
+    plt.title(title)
+    plt.xlabel("x")
+    plt.ylabel("y")
+
+    return fig, ax

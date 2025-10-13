@@ -47,7 +47,7 @@ class FemConductivitySolver:
             self.setup_boundary_data()  # Setup boundary data for existing mesh
 
     def setup_mesh(self):
-        """Create the unit disk mesh"""
+        """Create the unit disk mesh with uniformly spaced boundary vertices"""
         gmsh.initialize()
 
         # Create disk
@@ -55,14 +55,33 @@ class FemConductivitySolver:
         gmsh.model.occ.synchronize()
 
         gdim = 2
+
+        # Get boundary curves
+        boundary_curves = gmsh.model.getBoundary([(2, unitdisk)], oriented=False)
+
+        # Set mesh size specifically on boundary curves
+        target_boundary_spacing = (
+            2 * np.pi * self.mesh_characteristic_length
+        )  # Adjust as needed
+
+        for curve in boundary_curves:
+            # Set finer mesh size on boundary curves
+            gmsh.model.mesh.setSize(gmsh.model.getEntities(1), target_boundary_spacing)
+
         gmsh.model.addPhysicalGroup(gdim, [unitdisk], 1)
 
+        # Set general mesh size (interior)
         gmsh.option.setNumber(
             "Mesh.CharacteristicLengthMin", self.mesh_characteristic_length
         )
         gmsh.option.setNumber(
             "Mesh.CharacteristicLengthMax", self.mesh_characteristic_length
         )
+
+        # Enable mesh size from points for better boundary distribution
+        gmsh.option.setNumber("Mesh.CharacteristicLengthFromPoints", 1)
+        gmsh.option.setNumber("Mesh.CharacteristicLengthFromCurvature", 0)
+
         gmsh.model.mesh.generate(gdim)
 
         gmsh_model_rank = 0
@@ -76,8 +95,6 @@ class FemConductivitySolver:
 
         # Create function space
         self.V = functionspace(self.mesh, ("Lagrange", 1))
-
-        # Setup boundary data
         self.setup_boundary_data()
 
     def setup_boundary_data(self):
@@ -100,30 +117,51 @@ class FemConductivitySolver:
         Parameters:
         -----------
         conductivity_func : function
-            Function that takes (x, y) coordinates and returns (k11, k12, k22) 
+            Function that takes (x, y) coordinates and returns (k11, k12, k22)
             for the entire domain
         """
         # Create tensor function space
         V_tensor = functionspace(self.mesh, ("Lagrange", 1, (2, 2)))
         self.conductivity = Function(V_tensor)
 
-        # Get dofmap and geometry
-        dofmap = V_tensor.dofmap
+        # Get mesh coordinates
         mesh_geometry = self.mesh.geometry.x
-        cell_geometry = self.mesh.geometry.dofmap
+
+        # Get the dofmap for the tensor function space
+        dofmap = V_tensor.dofmap
+
+        # Create a set to track which vertices we've already processed
+        processed_vertices = set()
 
         # Iterate over all cells in the mesh
-        for cell in range(self.mesh.topology.index_map(self.mesh.topology.dim).size_local):
+        for cell in range(
+            self.mesh.topology.index_map(self.mesh.topology.dim).size_local
+        ):
             cell_dofs = dofmap.cell_dofs(cell)
-            geometry_dofs = cell_geometry[cell]
+
+            # Process each DOF in this cell
             for i, dof in enumerate(cell_dofs):
-                coord_idx = geometry_dofs[i // 4]
-                x, y = mesh_geometry[coord_idx][0], mesh_geometry[coord_idx][1]
+                # Skip if we've already processed this DOF
+                if dof in processed_vertices:
+                    continue
+
+                # Mark this DOF as processed
+                processed_vertices.add(dof)
+
+                # Get the coordinate for this DOF
+                # For Lagrange elements, each DOF corresponds to a mesh vertex
+                # We need to find which mesh vertex this DOF corresponds to
+                # coord_idx = dof
+                x, y = mesh_geometry[dof][0], mesh_geometry[dof][1]
+
                 k11, k12, k22 = conductivity_func(x, y)
                 self.conductivity.x.array[dof * 4 + 0] = k11
                 self.conductivity.x.array[dof * 4 + 1] = k12
                 self.conductivity.x.array[dof * 4 + 2] = k12  # symmetric
                 self.conductivity.x.array[dof * 4 + 3] = k22
+
+        # Ensure proper parallel communication
+        self.conductivity.x.scatter_forward()
 
     def assemble_system(self, neumann_cond):
         """
@@ -251,7 +289,7 @@ class FemConductivitySolver:
             ]
         )
         num_modes = len(n_values) // 2
-        self.basis_frequencies = n_values # Store frequencies
+        self.basis_frequencies = n_values  # Store frequencies
         self.basis_solutions = []
 
         ntd_matrix = np.zeros((2 * num_modes, 2 * num_modes), dtype=float)
@@ -269,7 +307,7 @@ class FemConductivitySolver:
 
             self.assemble_system(neumann_cond=nc_mode)
             self.solve_system()
-            self.basis_solutions.append(self.uh.copy()) # Store copy of solution
+            self.basis_solutions.append(self.uh.copy())  # Store copy of solution
 
             coefficients, _ = self.get_boundary_solution_fourier_coefficients(max_freq)
             ntd_matrix[:, j] = coefficients
@@ -286,14 +324,14 @@ class FemConductivitySolver:
 
             self.assemble_system(neumann_cond=nc_mode)
             self.solve_system()
-            self.basis_solutions.append(self.uh.copy()) # Store copy of solution
+            self.basis_solutions.append(self.uh.copy())  # Store copy of solution
 
             coefficients, _ = self.get_boundary_solution_fourier_coefficients(max_freq)
             ntd_matrix[:, col_idx] = coefficients
 
         self.ntd_matrix = ntd_matrix
         return ntd_matrix, n_values
-    
+
     def plot_solution(self, title="FEM solution u"):
         if self.uh is None:
             raise ValueError("No solution to plot")
