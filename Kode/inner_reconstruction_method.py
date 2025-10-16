@@ -171,10 +171,11 @@ def find_inclusion_elements_manual(
         check = Dfrechet - ntd_AD + ntd_A0
 
         eigenvalue_indeces.append(elem)
-        min_eigenvalue = min(np.linalg.eigvals(check))
+        eigenvalues = np.real(np.linalg.eigvals(check))
+        min_eigenvalue = min(eigenvalues)
         inclusion_test_matrix_eigenvalues.append(min_eigenvalue)
 
-        if min(np.linalg.eigvals(check)) > 0:
+        if min(eigenvalues) > 0:
             inclusion_indexes.append(elem)
 
     eigenvalue_dict = dict(zip(eigenvalue_indeces, inclusion_test_matrix_eigenvalues))

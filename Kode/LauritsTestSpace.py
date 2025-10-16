@@ -1,3 +1,5 @@
+# %%
+
 from fem_solver import FemConductivitySolver
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,33 +13,50 @@ from inner_reconstruction_method import (
     find_inclusion_elements,
     find_inclusion_elements_manual,
 )
+from conductivity_functions import (
+    conductivity_A0,
+    conductivity_AD,
+)
 
-k11_A0 = 1
-k12_A0 = 0
-k22_A0 = 1
+# %%
 
-k11_AD = 10
-k12_AD = 0
-k22_AD = 10
+background_conductivity = (1, 0, 1)
+inclusion_conductivity = (10, 0, 10)
+
+shape_choice = "U"
+shape_params = ((0.2, 0.6), inclusion_conductivity)
+
+# shape_choise = "triangle"
+# shape_params = (((0.0, -0.6), (0.5, 0.3), (-0.5, 0.3)), inclusion_conductivity)
+
+# shape_choice = "ellipse"
+# shape_params = ((0.0, 0.0, 0.6, 0.4), inclusion_conductivity)
+
+characteristic_length = 0.05
+
+max_freq = 40
 
 
 def my_conductivity_A0(x, y):
-    k11 = k11_A0
-    k12 = k12_A0
-    k22 = k22_A0
-    return k11, k12, k22
+    a11, a12, a22 = conductivity_A0(x, y, background_conductivity)
+    return a11, a12, a22
 
 
 def my_conductivity_AD(x, y):
-    k11, k12, k22 = my_conductivity_A0(x, y)
-    if np.sqrt(x**2 + y**2) <= 0.5:
-        k11 = k11_AD
-        k22 = k22_AD
-        k12 = k12_AD
-    return k11, k12, k22
+    a11, a12, a22 = conductivity_AD(
+        x, y, background_conductivity, shape_choice, shape_params
+    )
+    return a11, a12, a22
 
 
-solverA0 = FemConductivitySolver()
+fig, axes = plot_conductivity_components(
+    my_conductivity_AD,
+    title="U-shaped inclusion",
+)
+
+# %%
+
+solverA0 = FemConductivitySolver(mesh_characteristic_length=characteristic_length)
 solverA0.set_conductivity(my_conductivity_A0)
 
 mesh = solverA0.mesh
@@ -45,7 +64,6 @@ mesh = solverA0.mesh
 solverAD = FemConductivitySolver(mesh=mesh)
 solverAD.set_conductivity(my_conductivity_AD)
 
-max_freq = 10
 solverA0.compute_ntd_map(max_freq=max_freq)
 solverAD.compute_ntd_map(max_freq=max_freq)
 
@@ -64,23 +82,35 @@ solverAD.assemble_system(neumann_cond=nc)
 uAD = solverAD.solve_system()
 
 # Get plot objects WITHOUT displaying them
-solverAD.plot_solution("Solution $u_f^{\Lambda_A}$")
+solverAD.plot_solution("Solution $u_f^A$")
 
 # Plot entire boundary
 solverAD.plot_boundary_solution_with_neumann_cond(
-    "Solution $u_f^{\Lambda_A}$ on boundary with Neumann condition"
+    "Solution $u_f^A$ on boundary with Neumann condition"
 )
 
 c_tol = 0
 alpha_tol = 0
 beta_tol = 0
 
-# With diagonal conductivity matrices (AD-A0 >= cI). If c = 0, then AD-A0 = cI i Lo
-c = min(k11_AD, k22_AD) - max(k11_A0, k22_A0) - c_tol
+[a11_A0, a12_A0, a22_A0] = background_conductivity
+[a11_AD, a12_AD, a22_AD] = inclusion_conductivity
+
+A0_conductivity_matrix = np.array([[a11_A0, a12_A0], [a12_A0, a22_A0]])
+AD_conductivity_matrix = np.array([[a11_AD, a12_AD], [a12_AD, a22_AD]])
+
+A0_eigenvalues = np.linalg.eigvals(A0_conductivity_matrix)
+AD_eigenvalues = np.linalg.eigvals(AD_conductivity_matrix)
+
+print("AD eigenvalues:", AD_eigenvalues)
+print("A0 eigenvalues:", A0_eigenvalues)
+
+# With diagonal conductivity matrices (AD-A0 >= cI). If c = 0, then AD-A0 = cI in Loewner order
+c = min(AD_eigenvalues) - max(A0_eigenvalues) - c_tol
 # Lower bound on AD (alpha I <= AD <= beta I)
-alpha = min(k11_AD, k22_AD) - alpha_tol
+alpha = min(AD_eigenvalues) - alpha_tol
 # Upper bound on AD
-beta = max(k11_AD, k22_AD) + beta_tol
+beta = max(AD_eigenvalues) + beta_tol
 
 const = c * (alpha**2) / (beta**2)
 

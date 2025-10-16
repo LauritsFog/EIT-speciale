@@ -117,7 +117,7 @@ class FemConductivitySolver:
         Parameters:
         -----------
         conductivity_func : function
-            Function that takes (x, y) coordinates and returns (k11, k12, k22)
+            Function that takes (x, y) coordinates and returns (a11, a12, a22)
             for the entire domain
         """
         # Create tensor function space
@@ -154,11 +154,11 @@ class FemConductivitySolver:
                 # coord_idx = dof
                 x, y = mesh_geometry[dof][0], mesh_geometry[dof][1]
 
-                k11, k12, k22 = conductivity_func(x, y)
-                self.conductivity.x.array[dof * 4 + 0] = k11
-                self.conductivity.x.array[dof * 4 + 1] = k12
-                self.conductivity.x.array[dof * 4 + 2] = k12  # symmetric
-                self.conductivity.x.array[dof * 4 + 3] = k22
+                a11, a12, a22 = conductivity_func(x, y)
+                self.conductivity.x.array[dof * 4 + 0] = a11
+                self.conductivity.x.array[dof * 4 + 1] = a12
+                self.conductivity.x.array[dof * 4 + 2] = a12  # symmetric
+                self.conductivity.x.array[dof * 4 + 3] = a22
 
         # Ensure proper parallel communication
         self.conductivity.x.scatter_forward()
@@ -329,7 +329,7 @@ class FemConductivitySolver:
             coefficients, _ = self.get_boundary_solution_fourier_coefficients(max_freq)
             ntd_matrix[:, col_idx] = coefficients
 
-        self.ntd_matrix = ntd_matrix
+        self.ntd_matrix = np.real(ntd_matrix)
         return ntd_matrix, n_values
 
     def plot_solution(self, title="FEM solution u"):
@@ -451,9 +451,9 @@ class FemConductivitySolver:
         conductivity_array = self.conductivity.x.array.reshape(-1, 4)
 
         # For each vertex, extract the components [a, b, b, c]
-        a_vals = conductivity_array[:, 0]  # k11 component
-        b_vals = conductivity_array[:, 1]  # k12 component (off-diagonal)
-        c_vals = conductivity_array[:, 3]  # k22 component
+        a_vals = conductivity_array[:, 0]  # a11 component
+        b_vals = conductivity_array[:, 1]  # a12 component (off-diagonal)
+        c_vals = conductivity_array[:, 3]  # a22 component
 
         # Calculate collective min and max across all components
         all_vals = np.concatenate([a_vals, b_vals, c_vals])
@@ -465,7 +465,7 @@ class FemConductivitySolver:
         # Create triangulation
         triang = tri.Triangulation(x, y, cells)
 
-        # Plot k11 component with shared color limits
+        # Plot a11 component with shared color limits
         cont1 = axes[0].tricontourf(
             triang, a_vals, levels=levels, cmap="viridis", vmin=vmin, vmax=vmax
         )
@@ -477,7 +477,7 @@ class FemConductivitySolver:
         axes[0].axis("equal")
         plt.colorbar(cont1, ax=axes[0], label=r"$k_{11}$")
 
-        # Plot k12 component with shared color limits
+        # Plot a12 component with shared color limits
         cont2 = axes[1].tricontourf(
             triang, b_vals, levels=levels, cmap="viridis", vmin=vmin, vmax=vmax
         )
@@ -489,7 +489,7 @@ class FemConductivitySolver:
         axes[1].axis("equal")
         plt.colorbar(cont2, ax=axes[1], label=r"$k_{12}$")
 
-        # Plot k22 component with shared color limits
+        # Plot a22 component with shared color limits
         cont3 = axes[2].tricontourf(
             triang, c_vals, levels=levels, cmap="viridis", vmin=vmin, vmax=vmax
         )
