@@ -120,7 +120,7 @@ def plot_conductivity_components(
     return fig, axes
 
 
-def plot_highlighted_elements(mesh, element_indices):
+def plot_highlighted_elements(mesh, element_indices, inclusions=None):
     """
     Plot 2D mesh with highlighted elements using matplotlib
 
@@ -173,6 +173,19 @@ def plot_highlighted_elements(mesh, element_indices):
     plt.title(title)
     plt.xlabel("x")
     plt.ylabel("y")
+
+    if inclusions:
+        # Create grid
+        x = np.linspace(-1, 1, 500)
+        y = np.linspace(-1, 1, 500)
+        X, Y = np.meshgrid(x, y)
+
+        for D in inclusions:
+            # Evaluate f(x, y)
+            Z = D.condition(X, Y)
+
+            # Plot contour f(x, y) = 0
+            ax.contour(X, Y, Z, levels=[0], colors='blue', linewidths=2)
 
     return fig, ax
 
