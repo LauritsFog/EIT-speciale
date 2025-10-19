@@ -1,9 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-import numpy as np
-import matplotlib.pyplot as plt
-
 
 def plot_conductivity_components(
     conductivity_func,
@@ -44,7 +41,7 @@ def plot_conductivity_components(
         for j in range(X.shape[1]):
             x_val, y_val = X[i, j], Y[i, j]
             if np.sqrt(x_val**2 + y_val**2) <= domain_radius:
-                a11, a12, a22 = conductivity_func(x_val, y_val)
+                a11, a12, a22, inclusion_flag = conductivity_func(x_val, y_val)
                 a11_grid[i, j] = a11
                 a12_grid[i, j] = a12
                 a22_grid[i, j] = a22
@@ -84,6 +81,86 @@ def plot_conductivity_components(
     fig.suptitle(f"{title}", fontsize=16)
     plt.tight_layout()
     return fig, axes
+
+
+def plot_highlighted_elements_with_inclusions(
+    mesh, element_indices=None, cell_tags=None
+):
+    """
+    Plot 2D mesh with highlighted elements and optionally color inclusion regions.
+
+    Parameters
+    ----------
+    mesh : dolfinx.mesh.Mesh
+        The mesh.
+    element_indices : list[int] or int, optional
+        Indices of elements to highlight.
+    cell_tags : dolfinx.mesh.MeshTags, optional
+        Cell MeshTags marking inclusions (0 = matrix, 1 = inclusion).
+    """
+    if element_indices is None:
+        element_indices = []
+    elif isinstance(element_indices, int):
+        element_indices = [element_indices]
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    topology = mesh.topology
+    tdim = topology.dim
+
+    # Ensure connectivity exists
+    if topology.connectivity(tdim, 0) is None:
+        topology.create_connectivity(tdim, 0)
+
+    cells = topology.connectivity(tdim, 0).array.reshape(-1, tdim + 1)
+    vertices = mesh.geometry.x
+
+    # --- Plot all mesh cells (background) ---
+    for cell in cells:
+        poly = plt.Polygon(
+            vertices[cell][:, :2], fill=None, edgecolor="gray", alpha=0.3
+        )
+        ax.add_patch(poly)
+
+    # --- Highlight specified elements ---
+    for element_index in element_indices:
+        if 0 <= element_index < len(cells):
+            poly_highlight = plt.Polygon(
+                vertices[cells[element_index]][:, :2],
+                fill=True,
+                color="red",
+                alpha=0.7,
+                edgecolor="black",
+            )
+            ax.add_patch(poly_highlight)
+        else:
+            print(f"Element index {element_index} out of range (0-{len(cells) - 1})")
+
+    # --- Color inclusion cells ---
+    if cell_tags is not None:
+        inclusion_cells = np.where(cell_tags.values == 1)[0]
+        for c in inclusion_cells:
+            poly = plt.Polygon(
+                vertices[cells[c]][:, :2],
+                fill=True,
+                color="blue",
+                alpha=0.2,
+                edgecolor="black",
+            )
+            ax.add_patch(poly)
+
+    # --- Final formatting ---
+    ax.set_aspect("equal")
+    ax.autoscale_view()
+    plt.xlabel("x")
+    plt.ylabel("y")
+    title = "Mesh"
+    if element_indices:
+        title += f" with {len(element_indices)} highlighted element(s)"
+    if cell_tags is not None:
+        title += " and inclusion regions"
+    plt.title(title)
+
+    return fig, ax
 
 
 def plot_highlighted_elements(mesh, element_indices, inclusions=None):
@@ -151,7 +228,7 @@ def plot_highlighted_elements(mesh, element_indices, inclusions=None):
             Z = D.condition(X, Y)
 
             # Plot contour f(x, y) = 0
-            ax.contour(X, Y, Z, levels=[0], colors='blue', linewidths=2)
+            ax.contour(X, Y, Z, levels=[0], colors="blue", linewidths=2)
 
     return fig, ax
 
@@ -189,8 +266,8 @@ def plot_test_matrix_test_matrix_eigenvalues(
         # Plot all cells with color based on eigenvalue number
         for element_index in range(len(cells)):
             if element_index in eigenvalue_dict:
-                cond_num = eigenvalue_dict[element_index]
-                color = cmap(norm(cond_num))
+                eigval_num = eigenvalue_dict[element_index]
+                color = cmap(norm(eigval_num))
             else:
                 # Elements not in eigenvalue_dict get a default color
                 color = "lightgray"
