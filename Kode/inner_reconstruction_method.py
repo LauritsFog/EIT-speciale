@@ -172,10 +172,12 @@ def find_inclusion_elements_manual(
 
         eigenvalue_indeces.append(elem)
         eigenvalues = np.real(np.linalg.eigvals(check))
-        min_eigenvalue = min(eigenvalues)
+        # min_eigenvalue = min(eigenvalues)
+        min_eigenvalue = np.tan(min(eigenvalues) + np.pi / 2)
         inclusion_test_matrix_eigenvalues.append(min_eigenvalue)
 
-        if min(eigenvalues) > 0:
+        tol = 1e-8
+        if min(eigenvalues) > tol:
             inclusion_indexes.append(elem)
 
     eigenvalue_dict = dict(zip(eigenvalue_indeces, inclusion_test_matrix_eigenvalues))

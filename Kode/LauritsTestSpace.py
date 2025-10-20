@@ -46,10 +46,10 @@ shape_params = (
 background_conductivity = (1, 0, 1)
 inclusion_conductivity = shape_params[1]
 
-characteristic_length = 0.05
-piecewise_const = False
+characteristic_length = 0.04
+piecewise_const = True
 
-max_freq = 22
+max_freq = 50
 
 sampling_stride = 1
 
