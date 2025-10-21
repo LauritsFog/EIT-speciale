@@ -72,7 +72,7 @@ def find_inclusion_elements(
 
 
 def find_inclusion_elements_manual(
-    mesh, solutions_A0, ntd_AD, ntd_A0, sampling_stride=10, const=10
+    mesh, solutions_A0, ntd_AD, ntd_A0, sampling_stride=10, const=10, tol=1e-10
 ):
     """
     Optimized version - uses constant gradient property of P1 elements
@@ -136,7 +136,7 @@ def find_inclusion_elements_manual(
 
     inclusion_indexes = []
 
-    inclusion_test_matrix_eigenvalues = []
+    inclusion_eigenvalues = []
     eigenvalue_indeces = []
 
     for idx, elem in enumerate(sampled_elements):
@@ -172,15 +172,31 @@ def find_inclusion_elements_manual(
 
         eigenvalue_indeces.append(elem)
         eigenvalues = np.real(np.linalg.eigvals(check))
-        # min_eigenvalue = min(eigenvalues)
-        min_eigenvalue = np.tan(min(eigenvalues) + np.pi / 2)
-        inclusion_test_matrix_eigenvalues.append(min_eigenvalue)
+        min_eigenvalue = min(eigenvalues)
+        inclusion_eigenvalues.append(min_eigenvalue)
 
-        tol = 1e-8
-        if min(eigenvalues) > tol:
+        if min(eigenvalues) + tol > 0:
             inclusion_indexes.append(elem)
 
-    eigenvalue_dict = dict(zip(eigenvalue_indeces, inclusion_test_matrix_eigenvalues))
+    # Scale from 0 to infinity
+    if True:
+        # So we don't have issues with division by zero
+        scale_tol = 1e-15
+
+        inclusion_eigenvalues = np.array(inclusion_eigenvalues, dtype=float)
+
+        min_val, max_val = (
+            inclusion_eigenvalues.min(),
+            inclusion_eigenvalues.max(),
+        )
+
+        inclusion_eigenvalues = (inclusion_eigenvalues - min_val) / (max_val - min_val)
+
+        inclusion_eigenvalues = inclusion_eigenvalues / (
+            1 - inclusion_eigenvalues + scale_tol
+        )
+
+    eigenvalue_dict = dict(zip(eigenvalue_indeces, inclusion_eigenvalues))
 
     print(f"Found {len(inclusion_indexes)} potential inclusion elements")
     return (inclusion_indexes, eigenvalue_dict)

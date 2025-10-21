@@ -8,26 +8,26 @@ def plot_conductivity_components(
     n_points=500,
 ):
     """
-    Plot the conductivity tensor components (a11, a12, a22)
-    for a given conductivity function such as my_conductivity_AD(x, y, shape=...).
+     Plot the conductivity tensor components (a11, a12, a22)
+     for a given conductivity function such as my_conductivity_AD(x, y, shape=...).
 
-    Parameters
-    ----------
-    conductivity_func : callable
-        Function taking (x, y, shape=...) and returning (a11, a12, a22)
-    shape_choice : str
-        Which shape to visualize ("ellipse", "triangle", "U", ...)
-    title : str
-        Plot title
-    domain_radius : float
-        Radius of the circular domain (default = 1.0)
-    n_points : int
-        Grid resolution
+     Parameters
+    -------
+     conductivity_func : callable
+         Function taking (x, y, shape=...) and returning (a11, a12, a22)
+     shape_choice : str
+         Which shape to visualize ("ellipse", "triangle", "U", ...)
+     title : str
+         Plot title
+     domain_radius : float
+         Radius of the circular domain (default = 1.0)
+     n_points : int
+         Grid resolution
     """
 
     domain_radius = 1.0
 
-    # --- Grid setup
+    # Grid setup
     xi = np.linspace(-domain_radius, domain_radius, n_points)
     yi = np.linspace(-domain_radius, domain_radius, n_points)
     X, Y = np.meshgrid(xi, yi)
@@ -36,7 +36,7 @@ def plot_conductivity_components(
     a12_grid = np.full_like(X, np.nan)
     a22_grid = np.full_like(X, np.nan)
 
-    # --- Compute conductivity tensors
+    # Compute conductivity tensors
     for i in range(X.shape[0]):
         for j in range(X.shape[1]):
             x_val, y_val = X[i, j], Y[i, j]
@@ -46,7 +46,7 @@ def plot_conductivity_components(
                 a12_grid[i, j] = a12
                 a22_grid[i, j] = a22
 
-    # --- Plot setup
+    # Plot setup
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     components = [
         (a11_grid, r"$k_{11}$", "viridis"),
@@ -87,16 +87,16 @@ def plot_highlighted_elements_with_inclusions(
     mesh, element_indices=None, cell_tags=None
 ):
     """
-    Plot 2D mesh with highlighted elements and optionally color inclusion regions.
+     Plot 2D mesh with highlighted elements and optionally color inclusion regions.
 
-    Parameters
-    ----------
-    mesh : dolfinx.mesh.Mesh
-        The mesh.
-    element_indices : list[int] or int, optional
-        Indices of elements to highlight.
-    cell_tags : dolfinx.mesh.MeshTags, optional
-        Cell MeshTags marking inclusions (0 = matrix, 1 = inclusion).
+     Parameters
+    -------
+     mesh : dolfinx.mesh.Mesh
+         The mesh.
+     element_indices : list[int] or int, optional
+         Indices of elements to highlight.
+     cell_tags : dolfinx.mesh.MeshTags, optional
+         Cell MeshTags marking inclusions (0 = matrix, 1 = inclusion).
     """
     if element_indices is None:
         element_indices = []
@@ -114,28 +114,28 @@ def plot_highlighted_elements_with_inclusions(
     cells = topology.connectivity(tdim, 0).array.reshape(-1, tdim + 1)
     vertices = mesh.geometry.x
 
-    # --- Plot all mesh cells (background) ---
+    # Plot all mesh cells (background)
     for cell in cells:
         poly = plt.Polygon(
             vertices[cell][:, :2], fill=None, edgecolor="gray", alpha=0.3
         )
         ax.add_patch(poly)
 
-    # --- Highlight specified elements ---
+    # Highlight specified elements
     for element_index in element_indices:
         if 0 <= element_index < len(cells):
             poly_highlight = plt.Polygon(
                 vertices[cells[element_index]][:, :2],
                 fill=True,
                 color="red",
-                alpha=0.7,
+                alpha=0.8,
                 edgecolor="black",
             )
             ax.add_patch(poly_highlight)
         else:
             print(f"Element index {element_index} out of range (0-{len(cells) - 1})")
 
-    # --- Color inclusion cells ---
+    # Color inclusion cells
     if cell_tags is not None:
         inclusion_cells = np.where(cell_tags.values == 1)[0]
         for c in inclusion_cells:
@@ -143,12 +143,12 @@ def plot_highlighted_elements_with_inclusions(
                 vertices[cells[c]][:, :2],
                 fill=True,
                 color="blue",
-                alpha=0.2,
+                alpha=0.3,
                 edgecolor="black",
             )
             ax.add_patch(poly)
 
-    # --- Final formatting ---
+    # Final formatting
     ax.set_aspect("equal")
     ax.autoscale_view()
     plt.xlabel("x")
@@ -165,14 +165,14 @@ def plot_highlighted_elements_with_inclusions(
 
 def plot_highlighted_elements(mesh, element_indices, inclusions=None):
     """
-    Plot 2D mesh with highlighted elements using matplotlib
+     Plot 2D mesh with highlighted elements using matplotlib
 
-    Parameters:
-    -----------
-    mesh : dolfinx.mesh.Mesh
-        The mesh
-    element_indices : list or int
-        List of element indices to highlight, or single index
+     Parameters:
+    --------
+     mesh : dolfinx.mesh.Mesh
+         The mesh
+     element_indices : list or int
+         List of element indices to highlight, or single index
     """
     # Convert single index to list for uniform handling
     if isinstance(element_indices, int):
@@ -237,16 +237,16 @@ def plot_test_matrix_test_matrix_eigenvalues(
     mesh, eigenvalue_dict, title="Minimum eigenvalue of test matrix for each element"
 ):
     """
-    Plot ALL mesh elements colored by eigenvalue number
+     Plot ALL mesh elements colored by eigenvalue number
 
-    Parameters:
-    -----------
-    mesh : dolfinx.mesh.Mesh
-        The mesh
-    eigenvalue_dict : dict
-        Dictionary mapping element_index -> eigenvalue
-    title : str, optional
-        Plot title
+     Parameters:
+    --------
+     mesh : dolfinx.mesh.Mesh
+         The mesh
+     eigenvalue_dict : dict
+         Dictionary mapping element_index -> eigenvalue
+     title : str, optional
+         Plot title
     """
     fig, ax = plt.subplots(figsize=(10, 8))
 

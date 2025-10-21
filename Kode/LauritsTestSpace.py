@@ -27,13 +27,13 @@ from conductivity_functions import (
 # Frechet derivative DLambda(A0;c(alpha/beta)^2 I) with test
 # LambdaAD - LambdaA0 - DLambda(A0;c(alpha/beta)^2 I) <= 0
 
+# shape_choice = "ellipse"
+# shape_params = ((0.0, 0.0, 0.6, 0.4), (100, 0, 100))  # One ellipse, center, axes
+
 shape_choice = "two_ellipses"
-
-# shape_params = ((0.0, 0.0, 0.6, 0.4), (10, 0, 10))  # One ellipse, center, axes
-
 shape_params = (
-    (-0.25, -0.25, 0.3, 0.2, 0.25, 0.25, 0.3, 0.2),
-    (10, 0, 10),
+    (-0.4, -0.4, 0.3, 0.2, 0.4, 0.4, 0.3, 0.2),
+    (2, 0, 2),
 )  # Two ellipses, centers, axes
 
 # shape_params = (
@@ -45,13 +45,17 @@ shape_params = (
 
 background_conductivity = (1, 0, 1)
 inclusion_conductivity = shape_params[1]
+print("Inclusion conductivity:", inclusion_conductivity)
 
 characteristic_length = 0.04
 piecewise_const = True
 
-max_freq = 50
+max_freq = 25
 
 sampling_stride = 1
+
+# Tolerance in the inclusion test: min(eigenvalues) + tol > 0
+tol = 1e-15
 
 c_tol = 0
 alpha_tol = 0
@@ -86,7 +90,7 @@ def my_conductivity_A0(x, y):
 
 def my_conductivity_AD(x, y):
     a11, a12, a22, inclusion_flag = conductivity_AD(
-        x, y, background_conductivity, shape_choice
+        x, y, background_conductivity, shape_choice, shape_params
     )
     return a11, a12, a22, inclusion_flag
 
@@ -139,6 +143,7 @@ inclusion_indexes, test_matrix_eigenvalues = find_inclusion_elements_manual(
     ntd_A0=ntd_A0,
     sampling_stride=sampling_stride,
     const=const,
+    tol=tol,
 )
 
 plot_highlighted_elements_with_inclusions(mesh, inclusion_indexes, solverAD.cell_tags)
