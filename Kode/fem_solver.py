@@ -17,7 +17,7 @@ from dolfinx.io import gmshio
 import gmsh
 from scifem import create_real_functionspace
 from dolfinx.fem.petsc import apply_lifting, set_bc
-from dolfinx.mesh import locate_entities_boundary
+from dolfinx.mesh import meshtags, locate_entities_boundary, compute_midpoints
 import matplotlib.pyplot as plt
 import matplotlib.tri as tri
 
@@ -110,58 +110,113 @@ class FemConductivitySolver:
         # Coordinates of boundary vertices
         self.boundary_coords = coords_all[self.boundary_vertices]
 
-    def set_conductivity(self, conductivity_func):
+    def set_conductivity(
+        self, conductivity_func, background_conductivity_func, c, discontinuous=True
+    ):
         """
-        Set up conductivity tensor with a user-defined function
+         Set the conductivity tensor and tag inclusions based on the
+         positive definiteness of (A_D - A_0 - cI).
 
-        Parameters:
-        -----------
-        conductivity_func : function
-            Function that takes (x, y) coordinates and returns (k11, k12, k22)
-            for the entire domain
+         Parameters
+        -------
+         conductivity_func : function
+             Function taking (x, y) and returning (a11, a12, a22).
+             Defines the material conductivity A_D(x, y).
+
+         background_conductivity_func : function
+             Function taking (x, y) and returning (a11, a12, a22).
+             Defines the background conductivity A_0(x, y).
+
+         c : float
+             Threshold for inclusion detection in A_D - A_0 - cI.
+
+         discontinuous : bool, optional
+             If True, use a Discontinuous Lagrange (DG0) function space
+             (piecewise constant per element).
+             If False, use Continuous Lagrange (CG1).
         """
-        # Create tensor function space
-        V_tensor = functionspace(self.mesh, ("Lagrange", 1, (2, 2)))
+
+        # Choose function space type
+        element_type = (
+            ("Discontinuous Lagrange", 0) if discontinuous else ("Lagrange", 1)
+        )
+        V_tensor = functionspace(self.mesh, (element_type[0], element_type[1], (2, 2)))
         self.conductivity = Function(V_tensor)
 
-        # Get mesh coordinates
-        mesh_geometry = self.mesh.geometry.x
+        topology = self.mesh.topology
+        tdim = topology.dim
+        n_cells = topology.index_map(tdim).size_local
 
-        # Get the dofmap for the tensor function space
+        # Compute cell midpoints
+        cell_indices = np.arange(n_cells, dtype=np.int32)
+        cell_midpoints = compute_midpoints(self.mesh, tdim, cell_indices)
+
+        # Prepare arrays
+        A_values = np.zeros((n_cells, 2, 2))
+        inclusion_flags = np.zeros(n_cells, dtype=np.int32)
+
+        # Step 1: Evaluate and store conductivity tensors (A_D)
+        for cell in range(n_cells):
+            x_m, y_m = cell_midpoints[cell][:2]
+            a11, a12, a22, _ = conductivity_func(x_m, y_m)
+            A_values[cell] = np.array([[a11, a12], [a12, a22]])
+
+        # Step 2: Assign values to self.conductivity
         dofmap = V_tensor.dofmap
+        values = self.conductivity.x.array
+        processed_dofs = set()
+        geometry = self.mesh.geometry.x
 
-        # Create a set to track which vertices we've already processed
-        processed_vertices = set()
+        if discontinuous:
+            # One DOF per cell (DG0)
+            for cell in range(n_cells):
+                cell_dofs = dofmap.cell_dofs(cell)
+                a11, a12, a22 = (
+                    A_values[cell, 0, 0],
+                    A_values[cell, 0, 1],
+                    A_values[cell, 1, 1],
+                )
+                values[cell_dofs[0] * 4 + 0] = a11
+                values[cell_dofs[0] * 4 + 1] = a12
+                values[cell_dofs[0] * 4 + 2] = a12
+                values[cell_dofs[0] * 4 + 3] = a22
+        else:
+            # Continuous version (CG1): assign per vertex
+            for cell in range(n_cells):
+                for dof in dofmap.cell_dofs(cell):
+                    if dof in processed_dofs:
+                        continue
+                    processed_dofs.add(dof)
+                    x, y = geometry[dof][:2]
+                    a11, a12, a22, _ = conductivity_func(x, y)
+                    values[dof * 4 + 0] = a11
+                    values[dof * 4 + 1] = a12
+                    values[dof * 4 + 2] = a12
+                    values[dof * 4 + 3] = a22
 
-        # Iterate over all cells in the mesh
-        for cell in range(
-            self.mesh.topology.index_map(self.mesh.topology.dim).size_local
-        ):
-            cell_dofs = dofmap.cell_dofs(cell)
-
-            # Process each DOF in this cell
-            for i, dof in enumerate(cell_dofs):
-                # Skip if we've already processed this DOF
-                if dof in processed_vertices:
-                    continue
-
-                # Mark this DOF as processed
-                processed_vertices.add(dof)
-
-                # Get the coordinate for this DOF
-                # For Lagrange elements, each DOF corresponds to a mesh vertex
-                # We need to find which mesh vertex this DOF corresponds to
-                # coord_idx = dof
-                x, y = mesh_geometry[dof][0], mesh_geometry[dof][1]
-
-                k11, k12, k22 = conductivity_func(x, y)
-                self.conductivity.x.array[dof * 4 + 0] = k11
-                self.conductivity.x.array[dof * 4 + 1] = k12
-                self.conductivity.x.array[dof * 4 + 2] = k12  # symmetric
-                self.conductivity.x.array[dof * 4 + 3] = k22
-
-        # Ensure proper parallel communication
         self.conductivity.x.scatter_forward()
+
+        # Step 3: Compute inclusion tags (based on A_D - A_0 - cI)
+        Id = np.eye(2)
+        for cell in range(n_cells):
+            x_m, y_m = cell_midpoints[cell][:2]
+            A_D = A_values[cell]
+
+            # Alternative approach
+            # _, _, _, inclusion_flag = conductivity_func(x_m, y_m)
+            b11, b12, b22, _ = background_conductivity_func(x_m, y_m)
+            A_0 = np.array([[b11, b12], [b12, b22]])
+
+            A_diff = A_D - A_0 - c * Id
+
+            # Mark inclusion if det(A_diff) > 0
+            if np.linalg.det(A_diff) > 0:
+                inclusion_flags[cell] = 0
+            else:
+                inclusion_flags[cell] = 1
+
+        # Step 4: Create MeshTags for inclusions
+        self.cell_tags = meshtags(self.mesh, tdim, cell_indices, inclusion_flags)
 
     def assemble_system(self, neumann_cond):
         """
@@ -329,7 +384,7 @@ class FemConductivitySolver:
             coefficients, _ = self.get_boundary_solution_fourier_coefficients(max_freq)
             ntd_matrix[:, col_idx] = coefficients
 
-        self.ntd_matrix = ntd_matrix
+        self.ntd_matrix = np.real(ntd_matrix)
         return ntd_matrix, n_values
 
     def plot_solution(self, title="FEM solution u"):
@@ -427,79 +482,78 @@ class FemConductivitySolver:
 
         return fig, ax
 
-    def plot_conductivity_components(self, title="Conductivity Tensor Components"):
+    def plot_conductivity_components(
+        self, piecewise_const, title="Conductivity Tensor Components"
+    ):
         """
         Plot the three components of the anisotropic conductivity tensor.
-        For conductivity matrix [a b; b c], plots a, b, and c separately.
+        Works for both CG1 (continuous) and DG0 (discontinuous) spaces.
         """
+
         if self.conductivity is None:
             raise ValueError("Conductivity not set. Call set_conductivity() first.")
 
-        # Create figure with 3 subplots
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
-        # Get mesh coordinates and connectivity
-        coords = self.mesh.geometry.x.copy()
-        cells = self.mesh.topology.connectivity(
-            self.mesh.topology.dim, 0
-        ).array.reshape(-1, self.mesh.topology.dim + 1)
+        mesh = self.mesh
+        coords = mesh.geometry.x.copy()
+        topology = mesh.topology
+        tdim = topology.dim
+
+        if topology.connectivity(tdim, 0) is None:
+            topology.create_connectivity(tdim, 0)
+        cells = topology.connectivity(tdim, 0).array.reshape(-1, tdim + 1)
 
         x = coords[:, 0]
         y = coords[:, 1]
 
-        # Extract conductivity components at vertices
+        # Extract conductivity components
         conductivity_array = self.conductivity.x.array.reshape(-1, 4)
+        a_vals = conductivity_array[:, 0]  # a11
+        b_vals = conductivity_array[:, 1]  # a12
+        c_vals = conductivity_array[:, 3]  # a22
 
-        # For each vertex, extract the components [a, b, b, c]
-        a_vals = conductivity_array[:, 0]  # k11 component
-        b_vals = conductivity_array[:, 1]  # k12 component (off-diagonal)
-        c_vals = conductivity_array[:, 3]  # k22 component
-
-        # Calculate collective min and max across all components
+        # Compute limits
         all_vals = np.concatenate([a_vals, b_vals, c_vals])
-        vmin = np.min(all_vals)
-        vmax = np.max(all_vals)
-
+        vmin, vmax = np.min(all_vals), np.max(all_vals)
         levels = np.linspace(vmin, vmax + 1e-10, 100)
 
-        # Create triangulation
         triang = tri.Triangulation(x, y, cells)
 
-        # Plot k11 component with shared color limits
-        cont1 = axes[0].tricontourf(
-            triang, a_vals, levels=levels, cmap="viridis", vmin=vmin, vmax=vmax
-        )
-        # Add black triangle edges
-        axes[0].triplot(triang, color="black", linewidth=0.5, alpha=0.5)
-        axes[0].set_title(r"$k_{11}$ Component")
-        axes[0].set_xlabel("x")
-        axes[0].set_ylabel("y")
-        axes[0].axis("equal")
-        plt.colorbar(cont1, ax=axes[0], label=r"$k_{11}$")
+        # Helper plotting function
+        def plot_component(ax, vals, title, label):
+            if piecewise_const:
+                # DG0 -> one value per cell (use tripcolor)
+                tpc = ax.tripcolor(
+                    triang,
+                    facecolors=vals[: len(cells)],
+                    cmap="viridis",
+                    vmin=vmin,
+                    vmax=vmax,
+                    shading="flat",
+                )
+            else:
+                # CG1 -> one value per vertex (use tricontourf)
+                tpc = ax.tricontourf(
+                    triang,
+                    vals[: len(x)],
+                    levels=levels,
+                    cmap="viridis",
+                    vmin=vmin,
+                    vmax=vmax,
+                )
 
-        # Plot k12 component with shared color limits
-        cont2 = axes[1].tricontourf(
-            triang, b_vals, levels=levels, cmap="viridis", vmin=vmin, vmax=vmax
-        )
-        # Add black triangle edges
-        axes[1].triplot(triang, color="black", linewidth=0.5, alpha=0.5)
-        axes[1].set_title(r"$k_{12}$ Component")
-        axes[1].set_xlabel("x")
-        axes[1].set_ylabel("y")
-        axes[1].axis("equal")
-        plt.colorbar(cont2, ax=axes[1], label=r"$k_{12}$")
+            ax.triplot(triang, color="black", linewidth=0.3, alpha=0.3)
+            ax.set_title(title)
+            ax.set_xlabel("x")
+            ax.set_ylabel("y")
+            ax.axis("equal")
+            plt.colorbar(tpc, ax=ax, label=label)
 
-        # Plot k22 component with shared color limits
-        cont3 = axes[2].tricontourf(
-            triang, c_vals, levels=levels, cmap="viridis", vmin=vmin, vmax=vmax
-        )
-        # Add black triangle edges
-        axes[2].triplot(triang, color="black", linewidth=0.5, alpha=0.5)
-        axes[2].set_title(r"$k_{22}$ Component")
-        axes[2].set_xlabel("x")
-        axes[2].set_ylabel("y")
-        axes[2].axis("equal")
-        plt.colorbar(cont3, ax=axes[2], label=r"$k_{22}$")
+        # Plot components
+        plot_component(axes[0], a_vals, r"$k_{11}$ Component", r"$k_{11}$")
+        plot_component(axes[1], b_vals, r"$k_{12}$ Component", r"$k_{12}$")
+        plot_component(axes[2], c_vals, r"$k_{22}$ Component", r"$k_{22}$")
 
         fig.suptitle(title, fontsize=16)
         plt.tight_layout()
@@ -566,7 +620,7 @@ class FemConductivitySolver:
         """Compute real Fourier coefficients using FFT in ordering [a_N,...,a₁, b₁,...,b_N]
 
         Returns:
-        --------
+        --
         coefficients : numpy.ndarray
             Real Fourier coefficients ordered as:
             [a_N, a_{N-1}, ..., a₁, b₁, b₂, ..., b_N] where:
@@ -575,7 +629,6 @@ class FemConductivitySolver:
         n_values : numpy.ndarray
             The n values [N, N-1, ..., 1, 1, 2, ..., N]
         """
-        import numpy as np
 
         theta_sorted, u_sorted, coords_sorted = self.get_ordered_boundary_solution()
         N = len(u_sorted)

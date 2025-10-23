@@ -3,133 +3,176 @@ import matplotlib.pyplot as plt
 
 
 def plot_conductivity_components(
-    Omega_0,
-    Omega_1,
-    conductivity_Omega_0,
-    conductivity_Omega_1,
+    conductivity_func,
     title="Conductivity Tensor Components",
+    n_points=500,
 ):
     """
-    Plot the three components of the anisotropic conductivity tensor.
+     Plot the conductivity tensor components (a11, a12, a22)
+     for a given conductivity function such as my_conductivity_AD(x, y, shape=...).
 
-    Parameters:
-    -----------
-    Omega_0 : function
-        Function that takes coordinates (x, y) and returns boolean for subdomain 0
-    Omega_1 : function
-        Function that takes coordinates (x, y) and returns boolean for subdomain 1
-    conductivity_Omega_0 : function
-        Function that takes (x, y) and returns (k11, k12, k22) for subdomain 0
-    conductivity_Omega_1 : function
-        Function that takes (x, y) and returns (k11, k12, k22) for subdomain 1
-    title : str
-        Title for the plot
+     Parameters
+    -------
+     conductivity_func : callable
+         Function taking (x, y, shape=...) and returning (a11, a12, a22)
+     shape_choice : str
+         Which shape to visualize ("ellipse", "triangle", "U", ...)
+     title : str
+         Plot title
+     domain_radius : float
+         Radius of the circular domain (default = 1.0)
+     n_points : int
+         Grid resolution
     """
-    # Create figure with 3 subplots
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
-    # Create fine grid for plotting
-    n_points = 500
-    xi = np.linspace(-1, 1, n_points)
-    yi = np.linspace(-1, 1, n_points)
+    domain_radius = 1.0
+
+    # Grid setup
+    xi = np.linspace(-domain_radius, domain_radius, n_points)
+    yi = np.linspace(-domain_radius, domain_radius, n_points)
     X, Y = np.meshgrid(xi, yi)
 
-    # Initialize conductivity arrays
-    k11_grid = np.full_like(X, np.nan)
-    k12_grid = np.full_like(X, np.nan)
-    k22_grid = np.full_like(X, np.nan)
+    a11_grid = np.full_like(X, np.nan)
+    a12_grid = np.full_like(X, np.nan)
+    a22_grid = np.full_like(X, np.nan)
 
-    # Fill conductivity values based on the input functions
+    # Compute conductivity tensors
     for i in range(X.shape[0]):
         for j in range(X.shape[1]):
-            x_val = X[i, j]
-            y_val = Y[i, j]
-            r = np.sqrt(x_val**2 + y_val**2)
+            x_val, y_val = X[i, j], Y[i, j]
+            if np.sqrt(x_val**2 + y_val**2) <= domain_radius:
+                a11, a12, a22, inclusion_flag = conductivity_func(x_val, y_val)
+                a11_grid[i, j] = a11
+                a12_grid[i, j] = a12
+                a22_grid[i, j] = a22
 
-            if r <= 1.0:  # Only inside unit disk
-                # Determine which subdomain the point belongs to
-                if Omega_0(np.array([x_val, y_val])):
-                    k11, k12, k22 = conductivity_Omega_0(x_val, y_val)
-                elif Omega_1(np.array([x_val, y_val])):
-                    k11, k12, k22 = conductivity_Omega_1(x_val, y_val)
-                else:
-                    k11, k12, k22 = 0, 0, 0
+    # Plot setup
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    components = [
+        (a11_grid, r"$k_{11}$", "viridis"),
+        (a12_grid, r"$k_{12}$", "viridis"),
+        (a22_grid, r"$k_{22}$", "viridis"),
+    ]
 
-                k11_grid[i, j] = k11
-                k12_grid[i, j] = k12
-                k22_grid[i, j] = k22
-            # Outside unit circle remains as NaN
+    for ax, (grid, label, cmap) in zip(axes, components):
+        im = ax.imshow(
+            grid,
+            extent=[-domain_radius, domain_radius, -domain_radius, domain_radius],
+            origin="lower",
+            cmap=cmap,
+            aspect="equal",
+        )
+        ax.contour(X, Y, grid, levels=10, colors="white", linewidths=0.5, alpha=0.7)
+        ax.set_title(f"{label} Component")
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.add_patch(
+            plt.Circle(
+                (0, 0),
+                domain_radius,
+                fill=False,
+                color="black",
+                linestyle="-",
+                linewidth=1,
+            )
+        )
+        plt.colorbar(im, ax=ax, label=label)
 
-    # Plot k11 component
-    im1 = axes[0].imshow(
-        k11_grid, extent=[-1, 1, -1, 1], origin="lower", cmap="viridis", aspect="equal"
-    )
-    axes[0].contour(
-        X, Y, k11_grid, levels=10, colors="white", linewidths=0.5, alpha=0.7
-    )
-    axes[0].set_title(r"$k_{11}$ Component")
-    axes[0].set_xlabel("x")
-    axes[0].set_ylabel("y")
-
-    # Add unit circle boundary
-    outer_circle = plt.Circle(
-        (0, 0), 1, fill=False, color="black", linestyle="-", linewidth=1
-    )
-    axes[0].add_patch(outer_circle)
-    plt.colorbar(im1, ax=axes[0], label=r"$k_{11}$")
-
-    # Plot k12 component
-    im2 = axes[1].imshow(
-        k12_grid, extent=[-1, 1, -1, 1], origin="lower", cmap="plasma", aspect="equal"
-    )
-    axes[1].contour(
-        X, Y, k12_grid, levels=10, colors="white", linewidths=0.5, alpha=0.7
-    )
-    axes[1].set_title(r"$k_{12}$ Component")
-    axes[1].set_xlabel("x")
-    axes[1].set_ylabel("y")
-
-    # Add unit circle boundary
-    outer_circle = plt.Circle(
-        (0, 0), 1, fill=False, color="black", linestyle="-", linewidth=1
-    )
-    axes[1].add_patch(outer_circle)
-    plt.colorbar(im2, ax=axes[1], label=r"$k_{12}$")
-
-    # Plot k22 component
-    im3 = axes[2].imshow(
-        k22_grid, extent=[-1, 1, -1, 1], origin="lower", cmap="inferno", aspect="equal"
-    )
-    axes[2].contour(
-        X, Y, k22_grid, levels=10, colors="white", linewidths=0.5, alpha=0.7
-    )
-    axes[2].set_title(r"$k_{22}$ Component")
-    axes[2].set_xlabel("x")
-    axes[2].set_ylabel("y")
-
-    # Add unit circle boundary
-    outer_circle = plt.Circle(
-        (0, 0), 1, fill=False, color="black", linestyle="-", linewidth=1
-    )
-    axes[2].add_patch(outer_circle)
-    plt.colorbar(im3, ax=axes[2], label=r"$k_{22}$")
-
-    fig.suptitle(title, fontsize=16)
+    fig.suptitle(f"{title}", fontsize=16)
     plt.tight_layout()
-
     return fig, axes
+
+
+def plot_highlighted_elements_with_inclusions(
+    mesh, element_indices=None, cell_tags=None
+):
+    """
+     Plot 2D mesh with highlighted elements and optionally color inclusion regions.
+
+     Parameters
+    -------
+     mesh : dolfinx.mesh.Mesh
+         The mesh.
+     element_indices : list[int] or int, optional
+         Indices of elements to highlight.
+     cell_tags : dolfinx.mesh.MeshTags, optional
+         Cell MeshTags marking inclusions (0 = matrix, 1 = inclusion).
+    """
+    if element_indices is None:
+        element_indices = []
+    elif isinstance(element_indices, int):
+        element_indices = [element_indices]
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    topology = mesh.topology
+    tdim = topology.dim
+
+    # Ensure connectivity exists
+    if topology.connectivity(tdim, 0) is None:
+        topology.create_connectivity(tdim, 0)
+
+    cells = topology.connectivity(tdim, 0).array.reshape(-1, tdim + 1)
+    vertices = mesh.geometry.x
+
+    # Plot all mesh cells (background)
+    for cell in cells:
+        poly = plt.Polygon(
+            vertices[cell][:, :2], fill=None, edgecolor="gray", alpha=0.3
+        )
+        ax.add_patch(poly)
+
+    # Highlight specified elements
+    for element_index in element_indices:
+        if 0 <= element_index < len(cells):
+            poly_highlight = plt.Polygon(
+                vertices[cells[element_index]][:, :2],
+                fill=True,
+                color="red",
+                alpha=0.8,
+                edgecolor="black",
+            )
+            ax.add_patch(poly_highlight)
+        else:
+            print(f"Element index {element_index} out of range (0-{len(cells) - 1})")
+
+    # Color inclusion cells
+    if cell_tags is not None:
+        inclusion_cells = np.where(cell_tags.values == 1)[0]
+        for c in inclusion_cells:
+            poly = plt.Polygon(
+                vertices[cells[c]][:, :2],
+                fill=True,
+                color="blue",
+                alpha=0.3,
+                edgecolor="black",
+            )
+            ax.add_patch(poly)
+
+    # Final formatting
+    ax.set_aspect("equal")
+    ax.autoscale_view()
+    plt.xlabel("x")
+    plt.ylabel("y")
+    title = "Mesh"
+    if element_indices:
+        title += f" with {len(element_indices)} highlighted element(s)"
+    if cell_tags is not None:
+        title += " and inclusion regions"
+    plt.title(title)
+
+    return fig, ax
 
 
 def plot_highlighted_elements(mesh, element_indices, inclusions=None):
     """
-    Plot 2D mesh with highlighted elements using matplotlib
+     Plot 2D mesh with highlighted elements using matplotlib
 
-    Parameters:
-    -----------
-    mesh : dolfinx.mesh.Mesh
-        The mesh
-    element_indices : list or int
-        List of element indices to highlight, or single index
+     Parameters:
+    --------
+     mesh : dolfinx.mesh.Mesh
+         The mesh
+     element_indices : list or int
+         List of element indices to highlight, or single index
     """
     # Convert single index to list for uniform handling
     if isinstance(element_indices, int):
@@ -185,25 +228,25 @@ def plot_highlighted_elements(mesh, element_indices, inclusions=None):
             Z = D.condition(X, Y)
 
             # Plot contour f(x, y) = 0
-            ax.contour(X, Y, Z, levels=[0], colors='blue', linewidths=2)
+            ax.contour(X, Y, Z, levels=[0], colors="blue", linewidths=2)
 
     return fig, ax
 
 
 def plot_test_matrix_test_matrix_eigenvalues(
-    mesh, eigenvalue_dict, title="All Elements eigenvalue Number Heatmap"
+    mesh, eigenvalue_dict, title="Minimum eigenvalue of test matrix for each element"
 ):
     """
-    Plot ALL mesh elements colored by eigenvalue number
+     Plot ALL mesh elements colored by eigenvalue number
 
-    Parameters:
-    -----------
-    mesh : dolfinx.mesh.Mesh
-        The mesh
-    eigenvalue_dict : dict
-        Dictionary mapping element_index -> eigenvalue
-    title : str, optional
-        Plot title
+     Parameters:
+    --------
+     mesh : dolfinx.mesh.Mesh
+         The mesh
+     eigenvalue_dict : dict
+         Dictionary mapping element_index -> eigenvalue
+     title : str, optional
+         Plot title
     """
     fig, ax = plt.subplots(figsize=(10, 8))
 
@@ -223,8 +266,8 @@ def plot_test_matrix_test_matrix_eigenvalues(
         # Plot all cells with color based on eigenvalue number
         for element_index in range(len(cells)):
             if element_index in eigenvalue_dict:
-                cond_num = eigenvalue_dict[element_index]
-                color = cmap(norm(cond_num))
+                eigval_num = eigenvalue_dict[element_index]
+                color = cmap(norm(eigval_num))
             else:
                 # Elements not in eigenvalue_dict get a default color
                 color = "lightgray"
