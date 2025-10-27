@@ -180,20 +180,11 @@ def find_inclusion_elements_manual(
 
     # Scale from 0 to infinity
     if True:
-        # So we don't have issues with division by zero
-        scale_tol = 1e-15
-
         inclusion_eigenvalues = np.array(inclusion_eigenvalues, dtype=float)
 
-        min_val, max_val = (
-            inclusion_eigenvalues.min(),
-            inclusion_eigenvalues.max(),
-        )
-
-        inclusion_eigenvalues = (inclusion_eigenvalues - min_val) / (max_val - min_val)
-
-        inclusion_eigenvalues = inclusion_eigenvalues / (
-            1 - inclusion_eigenvalues + scale_tol
+        steepness = 1e6
+        inclusion_eigenvalues = 1 / (
+            1 + np.exp((-1) * steepness * inclusion_eigenvalues)
         )
 
     eigenvalue_dict = dict(zip(eigenvalue_indeces, inclusion_eigenvalues))

@@ -30,27 +30,28 @@ from conductivity_functions import (
 # shape_choice = "ellipse"
 # shape_params = ((0.0, 0.0, 0.6, 0.4), (100, 0, 100))  # One ellipse, center, axes
 
-shape_choice = "two_ellipses"
-shape_params = (
-    (-0.4, -0.4, 0.3, 0.2, 0.4, 0.4, 0.3, 0.2),
-    (2, 0, 2),
-)  # Two ellipses, centers, axes
+# shape_choice = "two_ellipses"
+# shape_params = (
+#     (-0.4, -0.4, 0.3, 0.2, 0.4, 0.4, 0.3, 0.2),
+#     (2, 0, 2),
+# )  # Two ellipses, centers, axes
 
 # shape_params = (
 #     ((-0.5, -0.5), (0.5, -0.5), (0.0, 0.5)),
 #     (10, 0, 10), "Triangle"
 # )  # Corner points
 
-# shape_params = ((0.2, 0.6), (10, 0, 10))  # U shape, Thickness, radius
+shape_choice = "U"
+shape_params = ((0.2, 0.6), (10, 0, 10))  # U shape, Thickness, radius
 
 background_conductivity = (1, 0, 1)
 inclusion_conductivity = shape_params[1]
 print("Inclusion conductivity:", inclusion_conductivity)
 
-characteristic_length = 0.04
+characteristic_length = 0.05
 piecewise_const = True
 
-max_freq = 25
+max_freq = 20
 
 sampling_stride = 1
 
