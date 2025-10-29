@@ -111,7 +111,7 @@ class FemConductivitySolver:
         self.boundary_coords = coords_all[self.boundary_vertices]
 
     def set_conductivity(
-        self, conductivity_func, background_conductivity_func, c, discontinuous=True
+        self, conductivity_func, background_conductivity_func, discontinuous=True
     ):
         """
          Set the conductivity tensor and tag inclusions based on the
@@ -151,17 +151,9 @@ class FemConductivitySolver:
         cell_indices = np.arange(n_cells, dtype=np.int32)
         cell_midpoints = compute_midpoints(self.mesh, tdim, cell_indices)
 
-        # Prepare arrays
-        A_values = np.zeros((n_cells, 2, 2))
         inclusion_flags = np.zeros(n_cells, dtype=np.int32)
 
-        # Step 1: Evaluate and store conductivity tensors (A_D)
-        for cell in range(n_cells):
-            x_m, y_m = cell_midpoints[cell][:2]
-            a11, a12, a22, _ = conductivity_func(x_m, y_m)
-            A_values[cell] = np.array([[a11, a12], [a12, a22]])
-
-        # Step 2: Assign values to self.conductivity
+        # Assign values to self.conductivity
         dofmap = V_tensor.dofmap
         values = self.conductivity.x.array
         processed_dofs = set()
@@ -171,11 +163,13 @@ class FemConductivitySolver:
             # One DOF per cell (DG0)
             for cell in range(n_cells):
                 cell_dofs = dofmap.cell_dofs(cell)
-                a11, a12, a22 = (
-                    A_values[cell, 0, 0],
-                    A_values[cell, 0, 1],
-                    A_values[cell, 1, 1],
-                )
+                # a11, a12, a22 = (
+                #     AD_values[cell, 0, 0],
+                #     AD_values[cell, 0, 1],
+                #     AD_values[cell, 1, 1],
+                # )
+                x_m, y_m = cell_midpoints[cell][:2]
+                a11, a12, a22 = conductivity_func(x_m, y_m)
                 values[cell_dofs[0] * 4 + 0] = a11
                 values[cell_dofs[0] * 4 + 1] = a12
                 values[cell_dofs[0] * 4 + 2] = a12
@@ -188,7 +182,7 @@ class FemConductivitySolver:
                         continue
                     processed_dofs.add(dof)
                     x, y = geometry[dof][:2]
-                    a11, a12, a22, _ = conductivity_func(x, y)
+                    a11, a12, a22 = conductivity_func(x, y)
                     values[dof * 4 + 0] = a11
                     values[dof * 4 + 1] = a12
                     values[dof * 4 + 2] = a12
@@ -196,27 +190,59 @@ class FemConductivitySolver:
 
         self.conductivity.x.scatter_forward()
 
-        # Step 3: Compute inclusion tags (based on A_D - A_0 - cI)
+        # Compute inclusion tags (based on A_D - A_0 - cI)
         Id = np.eye(2)
+        alpha = np.inf
+        beta = -np.inf
+        c = np.inf
+
         for cell in range(n_cells):
             x_m, y_m = cell_midpoints[cell][:2]
-            A_D = A_values[cell]
 
-            # Alternative approach
-            # _, _, _, inclusion_flag = conductivity_func(x_m, y_m)
-            b11, b12, b22, _ = background_conductivity_func(x_m, y_m)
+            a11, a12, a22 = conductivity_func(x_m, y_m)
+            A_D = np.array([[a11, a12], [a12, a22]])
+
+            b11, b12, b22 = background_conductivity_func(x_m, y_m)
             A_0 = np.array([[b11, b12], [b12, b22]])
 
-            A_diff = A_D - A_0 - c * Id
+            # Check if A_D and A_0 are identical
+            if (
+                abs(a11 - b11) < 1e-14
+                and abs(a12 - b12) < 1e-14
+                and abs(a22 - b22) < 1e-14
+            ):
+                continue  # Skip identical conductivities
 
-            # Mark inclusion if det(A_diff) > 0
-            if np.linalg.det(A_diff) > 0:
-                inclusion_flags[cell] = 0
-            else:
-                inclusion_flags[cell] = 1
+            c_new = min(np.linalg.eigvals(A_D)) - max(np.linalg.eigvals(A_0))
+            c = min(c, c_new)
 
-        # Step 4: Create MeshTags for inclusions
+            alpha_new = min(np.linalg.eigvals(A_D))
+            alpha = min(alpha, alpha_new)
+
+            beta_new = max(np.linalg.eigvals(A_D))
+            beta = max(beta, beta_new)
+
+        # Check if c a real number. If not, then A_D = A_0 and there are no inclusions.
+        if np.isfinite(c):
+            for cell in range(n_cells):
+                x_m, y_m = cell_midpoints[cell][:2]
+
+                a11, a12, a22 = conductivity_func(x_m, y_m)
+                A_D = np.array([[a11, a12], [a12, a22]])
+
+                b11, b12, b22 = background_conductivity_func(x_m, y_m)
+                A_0 = np.array([[b11, b12], [b12, b22]])
+
+                A_diff = A_D - A_0 - c * Id
+
+                # Mark inclusion if det(A_diff) >= 0
+                if min(np.real(np.linalg.eigvals(A_diff))) >= 0:
+                    inclusion_flags[cell] = 1
+
+        # Create MeshTags for inclusions
         self.cell_tags = meshtags(self.mesh, tdim, cell_indices, inclusion_flags)
+
+        return c, alpha, beta
 
     def assemble_system(self, neumann_cond):
         """
@@ -407,7 +433,7 @@ class FemConductivitySolver:
 
         # Create the plot
         cont = ax.tricontourf(triang, u_vals, levels=50, cmap="viridis")
-        ax.tricontour(triang, u_vals, levels=10, colors="k", linewidths=0.5)
+        ax.tricontour(triang, u_vals, levels=50, colors="k", linewidths=0.5)
         ax.set_xlabel("x")
         ax.set_ylabel("y")
         ax.set_title(title)

@@ -175,14 +175,14 @@ def find_inclusion_elements_manual(
         min_eigenvalue = min(eigenvalues)
         inclusion_eigenvalues.append(min_eigenvalue)
 
-        if min(eigenvalues) + tol > 0:
+        if min_eigenvalue + tol > 0:
             inclusion_indexes.append(elem)
 
     # Scale from 0 to infinity
     if True:
         inclusion_eigenvalues = np.array(inclusion_eigenvalues, dtype=float)
 
-        steepness = 1e6
+        steepness = 1e10
         inclusion_eigenvalues = 1 / (
             1 + np.exp((-1) * steepness * inclusion_eigenvalues)
         )

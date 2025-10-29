@@ -41,7 +41,7 @@ def plot_conductivity_components(
         for j in range(X.shape[1]):
             x_val, y_val = X[i, j], Y[i, j]
             if np.sqrt(x_val**2 + y_val**2) <= domain_radius:
-                a11, a12, a22, inclusion_flag = conductivity_func(x_val, y_val)
+                a11, a12, a22 = conductivity_func(x_val, y_val)
                 a11_grid[i, j] = a11
                 a12_grid[i, j] = a12
                 a22_grid[i, j] = a22

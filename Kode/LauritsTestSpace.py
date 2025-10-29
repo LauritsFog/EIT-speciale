@@ -15,7 +15,6 @@ from inner_reconstruction_method import (
     find_inclusion_elements_manual,
 )
 from conductivity_functions import (
-    conductivity_A0,
     conductivity_AD,
 )
 
@@ -27,31 +26,10 @@ from conductivity_functions import (
 # Frechet derivative DLambda(A0;c(alpha/beta)^2 I) with test
 # LambdaAD - LambdaA0 - DLambda(A0;c(alpha/beta)^2 I) <= 0
 
-# shape_choice = "ellipse"
-# shape_params = ((0.0, 0.0, 0.6, 0.4), (100, 0, 100))  # One ellipse, center, axes
-
-# shape_choice = "two_ellipses"
-# shape_params = (
-#     (-0.4, -0.4, 0.3, 0.2, 0.4, 0.4, 0.3, 0.2),
-#     (2, 0, 2),
-# )  # Two ellipses, centers, axes
-
-# shape_params = (
-#     ((-0.5, -0.5), (0.5, -0.5), (0.0, 0.5)),
-#     (10, 0, 10), "Triangle"
-# )  # Corner points
-
-shape_choice = "U"
-shape_params = ((0.2, 0.6), (10, 0, 10))  # U shape, Thickness, radius
-
-background_conductivity = (1, 0, 1)
-inclusion_conductivity = shape_params[1]
-print("Inclusion conductivity:", inclusion_conductivity)
-
 characteristic_length = 0.05
 piecewise_const = True
 
-max_freq = 20
+max_freq = 15
 
 sampling_stride = 1
 
@@ -62,57 +40,55 @@ c_tol = 0
 alpha_tol = 0
 beta_tol = 0
 
-[a11_A0, a12_A0, a22_A0] = background_conductivity
-[a11_AD, a12_AD, a22_AD] = inclusion_conductivity
+# Example setup
+shape_choice = "two_ellipses"
+shape_params = (-0.4, -0.4, 0.3, 0.2, 0.4, 0.4, 0.3, 0.2)
 
-A0_conductivity_matrix = np.array([[a11_A0, a12_A0], [a12_A0, a22_A0]])
-AD_conductivity_matrix = np.array([[a11_AD, a12_AD], [a12_AD, a22_AD]])
+# Define conductivity fields
+my_conductivity_A0 = lambda x, y: (1, 0, 1)
 
-A0_eigenvalues = np.linalg.eigvals(A0_conductivity_matrix)
-AD_eigenvalues = np.linalg.eigvals(AD_conductivity_matrix)
-
-print("AD eigenvalues:", AD_eigenvalues)
-print("A0 eigenvalues:", A0_eigenvalues)
-
-# With diagonal conductivity matrices (AD-A0 >= cI). If c = 0, then AD-A0 = cI in Loewner order
-c = min(AD_eigenvalues) - max(A0_eigenvalues) - c_tol
-# Lower bound on AD (alpha I <= AD <= beta I)
-alpha = min(AD_eigenvalues) - alpha_tol
-# Upper bound on AD
-beta = max(AD_eigenvalues) + beta_tol
-
-const = c * (alpha**2) / (beta**2)
-
-
-def my_conductivity_A0(x, y):
-    a11, a12, a22, inclusion_flag = conductivity_A0(x, y, background_conductivity)
-    return a11, a12, a22, inclusion_flag
+inclusion_conductivity_1 = lambda x, y: (5, 0, 5)
+inclusion_conductivity_2 = lambda x, y: (10, 0, 8)
 
 
 def my_conductivity_AD(x, y):
-    a11, a12, a22, inclusion_flag = conductivity_AD(
-        x, y, background_conductivity, shape_choice, shape_params
+    return conductivity_AD(
+        x,
+        y,
+        my_conductivity_A0,
+        (inclusion_conductivity_1, inclusion_conductivity_2),
+        shape_choice,
+        shape_params,
     )
-    return a11, a12, a22, inclusion_flag
 
 
+# Visualization
 fig, axes = plot_conductivity_components(
-    my_conductivity_AD,
-    title="Two ellipse inclusions",
+    my_conductivity_AD, title=f"{shape_choice} Conductivity Distribution"
 )
 
 # %%
 
 solverA0 = FemConductivitySolver(mesh_characteristic_length=characteristic_length)
-solverA0.set_conductivity(my_conductivity_A0, my_conductivity_A0, c, piecewise_const)
+solverA0.set_conductivity(my_conductivity_A0, my_conductivity_A0, piecewise_const)
 
 mesh = solverA0.mesh
 
 solverAD = FemConductivitySolver(mesh=mesh)
-solverAD.set_conductivity(my_conductivity_AD, my_conductivity_A0, c, piecewise_const)
+c, alpha, beta = solverAD.set_conductivity(
+    my_conductivity_AD, my_conductivity_A0, piecewise_const
+)
 
 solverA0.compute_ntd_map(max_freq=max_freq)
 solverAD.compute_ntd_map(max_freq=max_freq)
+
+# AD-A0 >= cI and alpha I <= AD <= beta I
+
+c = c - c_tol
+alpha = alpha - alpha_tol
+beta = beta + beta_tol
+
+const = c * (alpha**2) / (beta**2)
 
 ntd_A0 = solverA0.ntd_matrix
 ntd_AD = solverAD.ntd_matrix
