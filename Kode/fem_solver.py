@@ -20,6 +20,7 @@ from dolfinx.fem.petsc import apply_lifting, set_bc
 from dolfinx.mesh import meshtags, locate_entities_boundary, compute_midpoints
 import matplotlib.pyplot as plt
 import matplotlib.tri as tri
+from dolfinx.cpp.la.petsc import get_local_vectors
 
 
 class FemConductivitySolver:
@@ -331,7 +332,6 @@ class FemConductivitySolver:
 
     def extract_solution(self):
         """Extract solution from mixed space"""
-        from dolfinx.cpp.la.petsc import get_local_vectors
 
         maps = [
             (Wi.dofmap.index_map, Wi.dofmap.index_map_bs)
@@ -343,16 +343,36 @@ class FemConductivitySolver:
         self.uh.x.array[: len(x_local[0])] = x_local[0]
         self.uh.x.scatter_forward()
 
-    def cleanup(self):
-        """Clean up PETSc objects"""
-        if self.b is not None:
-            self.b.destroy()
-        if self.xh is not None:
-            self.xh.destroy()
-        if self.A is not None:
-            self.A.destroy()
-        if self.ksp is not None:
-            self.ksp.destroy()
+    def compute_L2_error(self, u_exact):
+        """
+        Compute the L²-norm of the error between the FEM solution u_h
+        and an exact (real-valued) solution function u_exact(x, y).
+
+        Parameters
+        ----------
+        u_exact : callable
+            Function u_exact(x, y) returning the true solution at coordinates (x, y).
+
+        Returns
+        -------
+        L2_error : float
+            The L²-norm of the FEM error ||u_h - u_exact||_{L²(Ω)}.
+        """
+        if self.uh is None:
+            raise ValueError(
+                "FEM solution (uh) not available. Run solve_system() first."
+            )
+
+        # Define expression for (u_h - u_exact)^2
+        x = ufl.SpatialCoordinate(self.mesh)
+        u_diff_expr = (self.uh - u_exact(x[0], x[1])) ** 2
+
+        # Form and assemble the L² norm
+        L2_form = form(ufl.inner(u_diff_expr, 1.0) * ufl.dx)
+        error_squared = assemble_scalar(L2_form)
+        L2_error = np.sqrt(error_squared)
+
+        return L2_error
 
     def compute_ntd_map(self, max_freq=None):
         """Compute Neumann-to-Dirichlet map with ordering [a_N,...,a₁, b₁,...,b_N]"""
@@ -412,6 +432,17 @@ class FemConductivitySolver:
 
         self.ntd_matrix = np.real(ntd_matrix)
         return ntd_matrix, n_values
+
+    def cleanup(self):
+        """Clean up PETSc objects"""
+        if self.b is not None:
+            self.b.destroy()
+        if self.xh is not None:
+            self.xh.destroy()
+        if self.A is not None:
+            self.A.destroy()
+        if self.ksp is not None:
+            self.ksp.destroy()
 
     def plot_solution(self, title="FEM solution u"):
         if self.uh is None:

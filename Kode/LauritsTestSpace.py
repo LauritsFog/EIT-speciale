@@ -74,6 +74,7 @@ solverA0.set_conductivity(my_conductivity_A0, my_conductivity_A0, piecewise_cons
 
 mesh = solverA0.mesh
 
+# Computing the "optimal" alpha, beta, c constants from checking the conductivity on each element
 solverAD = FemConductivitySolver(mesh=mesh)
 c, alpha, beta = solverAD.set_conductivity(
     my_conductivity_AD, my_conductivity_A0, piecewise_const
