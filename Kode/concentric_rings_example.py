@@ -124,6 +124,7 @@ def compute_solution_coefficients(r1, r2, n, polar_mats):
     b[4] = 1.0
 
     coeffs = np.linalg.solve(A, b)
+    coeffs = coeffs.tolist()
     coeffs = [(coeffs[0], 0.0), (coeffs[1], coeffs[2]), (coeffs[3], coeffs[4])]
     return coeffs
 
@@ -179,10 +180,12 @@ def exact_solution(x, y, n, radii, coeffs, ks):
     return u_expr
 
 
+## Configuration
+
 characteristic_length = 0.05
 piecewise_const = True
 
-max_freq = 15
+max_freq = 10
 
 sampling_stride = 1
 
@@ -195,16 +198,18 @@ beta_tol = 0
 
 # Define geometry
 r1, r2 = 0.3, 0.7
+
+# Eigenmode frequency
 n = 2
 
 shape_choice = "two_ellipses"
-shape_params = (0, 0, 0.3, 0.3, 0, 0, 0.7, 0.7)
+shape_params = (0, 0, r1, r1, 0, 0, r2, r2)
 
 # Each layer given in polar coordinates (a_r, a_theta)
 polar_layers = [
     (1.0, 1.0),
-    (8.0, 6.0),
-    (2.0, 4.0),
+    (8.0, 8.0),
+    (4.0, 4.0),
 ]
 
 # Anisotropy factors κ_j = sqrt(a_theta^(j) / a_r^(j))
@@ -266,10 +271,11 @@ ntd_AD = solverAD.ntd_matrix
 
 fig_components, axes_components = solverAD.plot_conductivity_components(piecewise_const)
 
-# Solve with different boundary fluxes by modifying b
-x = ufl.SpatialCoordinate(solverA0.get_mesh())
+## Solve with example Neumann condition
 
-nc = ufl.cos(3 * ufl.atan2(x[1], x[0]))  # Neumann condition (flux) on boundary
+x = ufl.SpatialCoordinate(solverAD.get_mesh())
+
+nc = ufl.cos(n * ufl.atan2(x[1], x[0]))  # Neumann condition (flux) on boundary
 
 # Re-assemble only the RHS with new flux
 solverAD.assemble_system(neumann_cond=nc)
@@ -284,12 +290,39 @@ L2_error = solverAD.compute_L2_error(u_exact)
 
 print(f"L2 error of u_h: {L2_error}")
 
-# Get plot objects WITHOUT displaying them
 solverAD.plot_solution("Solution $u_f^A$")
 
 # Plot entire boundary
 solverAD.plot_boundary_solution_with_neumann_cond(
     "Solution $u_f^A$ on boundary with Neumann condition"
 )
+
+solverAD.cleanup()
+
+## Find error for different characteristic lengths
+
+characteristic_lengths = [0.1, 0.05, 0.001, 0.0005]
+L2_errors = []
+
+for cl in characteristic_lengths:
+    solverAD = FemConductivitySolver(mesh_characteristic_length=cl)
+    c, alpha, beta = solverAD.set_conductivity(
+        my_conductivity_AD, my_conductivity_A0, piecewise_const
+    )
+
+    x = ufl.SpatialCoordinate(solverAD.get_mesh())
+    nc = ufl.cos(n * ufl.atan2(x[1], x[0]))
+
+    solverAD.assemble_system(neumann_cond=nc)
+    uAD = solverAD.solve_system()
+
+    L2_error = solverAD.compute_L2_error(u_exact)
+    L2_errors.append(L2_error)
+
+    solverAD.cleanup()
+
+
+print("L2 errors for different characteristic lengths:")
+print(L2_errors)
 
 plt.show()

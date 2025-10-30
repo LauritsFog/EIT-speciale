@@ -363,14 +363,14 @@ class FemConductivitySolver:
                 "FEM solution (uh) not available. Run solve_system() first."
             )
 
-        # Define expression for (u_h - u_exact)^2
+        # Define expression for u_h - u_exact
         x = ufl.SpatialCoordinate(self.mesh)
-        u_diff_expr = (self.uh - u_exact(x[0], x[1])) ** 2
+        u_diff_expr = self.uh - u_exact(x[0], x[1])
 
-        # Form and assemble the L² norm
-        L2_form = form(ufl.inner(u_diff_expr, 1.0) * ufl.dx)
+        # Form and assemble the L2 norm
+        L2_form = form(ufl.inner(u_diff_expr, u_diff_expr) * ufl.dx)
         error_squared = assemble_scalar(L2_form)
-        L2_error = np.sqrt(error_squared)
+        L2_error = float(np.sqrt(error_squared))
 
         return L2_error
 
