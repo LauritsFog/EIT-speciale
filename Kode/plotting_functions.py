@@ -2,6 +2,138 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+import matplotlib.pyplot as plt
+import numpy as np
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+
+def plot_ND_map(
+    ND_matrix,
+    frequencies=None,
+    title="Neumann-to-Dirichlet (ND) Map",
+    cmap="viridis",
+):
+    """
+    Plot the Neumann-to-Dirichlet (ND) matrix as a heatmap with frequency labels.
+
+    Parameters
+    ----------
+    ND_matrix : 2D array_like
+        The ND matrix (e.g., from solver.ntd_matrix).
+    frequencies : array_like, optional
+        The basis frequencies (e.g., from solver.basis_frequencies).
+        Used to label the axes in physical mode order.
+    title : str, optional
+        Title for the plot.
+    cmap : str, optional
+        Matplotlib colormap (default: 'coolwarm').
+    log_scale : bool, optional
+        If True, plot log10(|ND_matrix|).
+    show_colorbar : bool, optional
+        Whether to include a colorbar.
+    symmetric : bool, optional
+        If True, set symmetric color limits around zero.
+
+    Returns
+    -------
+    fig, ax : matplotlib Figure and Axes
+        The created figure and axis objects.
+    """
+    ND_matrix = np.array(ND_matrix, dtype=float)
+
+    value_label = r"$\Lambda(A)_{ij}$"
+
+    vmin, vmax = np.min(ND_matrix), np.max(ND_matrix)
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    im = ax.imshow(
+        ND_matrix, cmap=cmap, origin="upper", aspect="equal", vmin=vmin, vmax=vmax
+    )
+
+    # Axis labels
+    ax.set_title(title, fontsize=14)
+    ax.set_xlabel("Input Mode", fontsize=12)
+    ax.set_ylabel("Output Mode", fontsize=12)
+
+    # Optional frequency labels
+    if frequencies is not None:
+        freqs = np.array(frequencies)
+        ticks = np.arange(len(freqs))
+        tick_labels = [
+            f"cos({n}θ)" if i < len(freqs) // 2 else f"sin({n}θ)"
+            for i, n in enumerate(freqs)
+        ]
+        ax.set_xticks(ticks)
+        ax.set_yticks(ticks)
+        ax.set_xticklabels(tick_labels, rotation=45, ha="right", fontsize=9)
+        ax.set_yticklabels(tick_labels, fontsize=9)
+    else:
+        ax.set_xticks(np.arange(ND_matrix.shape[1]))
+        ax.set_yticks(np.arange(ND_matrix.shape[0]))
+
+    # Add colorbar
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label(value_label, fontsize=12)
+
+    ax.grid(False)
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_errors(errors, mesh_sizes=None, labels=None, title="L² Error Convergence"):
+    """
+    Plot FEM errors on a semilogy (log-linear) plot.
+
+    Parameters
+    ----------
+    errors : array_like or 2D array_like
+        List/array of L² (or other) error values.
+        If 2D, each row/column represents a separate error curve.
+    mesh_sizes : array_like, optional
+        Mesh sizes (h-values) or degrees of freedom corresponding to each error.
+        If None, uses indices 1..N on the x-axis.
+    labels : list of str, optional
+        Legend labels for each error curve.
+    title : str, optional
+        Title of the plot.
+
+    Returns
+    -------
+    fig, ax : matplotlib Figure and Axes
+        The created plot objects.
+    """
+    errors = np.atleast_2d(np.array(errors))
+    n_curves, n_points = (
+        errors.shape if errors.shape[0] < errors.shape[1] else errors.T.shape
+    )
+
+    # Handle mesh sizes
+    if mesh_sizes is None:
+        mesh_sizes = np.arange(1, n_points + 1)
+    mesh_sizes = np.array(mesh_sizes)
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+
+    # Plot each error curve
+    for i in range(errors.shape[0]):
+        label = labels[i] if labels is not None and i < len(labels) else None
+        ax.semilogy(mesh_sizes, errors[i], "o-", linewidth=2, markersize=6, label=label)
+
+    ax.set_xlabel("Mesh size (h)")
+    ax.set_ylabel("Error")
+    ax.set_title(title)
+    ax.grid(True, which="both", linestyle="--", alpha=0.7)
+
+    if labels is not None:
+        ax.legend()
+
+    plt.tight_layout()
+    return fig, ax
+
+
 def plot_conductivity_components(
     conductivity_func,
     title="Conductivity Tensor Components",

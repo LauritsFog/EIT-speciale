@@ -4,55 +4,12 @@ from fem_solver import FemConductivitySolver
 import matplotlib.pyplot as plt
 import numpy as np
 import ufl
-from plotting_functions import (
-    plot_conductivity_components,
-    plot_highlighted_elements,
-    plot_highlighted_elements_with_inclusions,
-    plot_test_matrix_test_matrix_eigenvalues,
-)
-from inner_reconstruction_method import (
-    find_inclusion_elements,
-    find_inclusion_elements_manual,
-)
+from plotting_functions import plot_conductivity_components, plot_errors, plot_ND_map
 from conductivity_functions import (
     conductivity_AD,
 )
 
 # %%
-
-
-def plot_errors(errors, mesh_sizes=None, title="L² Error Convergence"):
-    """
-    Plot FEM errors on a semilogy (log-linear) plot.
-
-    Parameters
-    ----------
-    errors : array_like
-        List or array of L² (or other) error values.
-    mesh_sizes : array_like, optional
-        Mesh sizes (h-values) or degrees of freedom corresponding to each error.
-        If None, uses indices 1..N on the x-axis.
-    title : str, optional
-        Title of the plot.
-
-    Returns
-    -------
-    fig, ax : matplotlib Figure and Axes
-        The created plot objects.
-    """
-    errors = np.array(errors)
-    if mesh_sizes is None:
-        mesh_sizes = np.arange(1, len(errors) + 1)
-
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.semilogy(mesh_sizes, errors, "o-", linewidth=2, markersize=6)
-    ax.set_xlabel("Mesh size (h)")
-    ax.set_ylabel("Error")
-    ax.set_title(title)
-    ax.grid(True, which="both", linestyle="--", alpha=0.7)
-    plt.tight_layout()
-
-    return fig, ax
 
 
 def polar_to_euclidean(polar_conductivities, x, y):
@@ -299,21 +256,6 @@ fig, axes = plot_conductivity_components(
 solverAD = FemConductivitySolver(mesh_characteristic_length=characteristic_length)
 c, alpha, beta = solverAD.set_conductivity(my_conductivity_AD, my_conductivity_A0)
 
-solverAD.compute_ntd_map(max_freq=max_freq)
-
-# AD-A0 >= cI and alpha I <= AD <= beta I
-
-c = c - c_tol
-alpha = alpha - alpha_tol
-beta = beta + beta_tol
-
-const = c * (alpha**2) / (beta**2)
-
-ntd_AD = solverAD.ntd_matrix
-
-print(ntd_AD[max_freq - n, max_freq - n])
-print(alpha3 + beta3)
-
 fig_components, axes_components = solverAD.plot_conductivity_components()
 
 ## Solve with example Neumann condition
@@ -343,37 +285,86 @@ solverAD.plot_boundary_solution_with_neumann_cond(
     "Solution $u_f^A$ on boundary with Neumann condition"
 )
 
-solverAD.plot_fourier_coefficients()
-
 solverAD.cleanup()
 
-# Find error for different characteristic lengths
+## Investigate eiganvalues
 
-characteristic_lengths = [0.1, 0.05, 0.01, 0.005]
-L2_errors = []
+ntd_AD, n_freqs = solverAD.compute_ntd_map(max_freq=max_freq)
+ND_fem_eigenvals = np.linalg.eigvals(ntd_AD)
 
-for cl in characteristic_lengths:
-    solverAD = FemConductivitySolver(mesh_characteristic_length=cl)
-    solverAD.set_conductivity(
-        my_conductivity_AD,
-        my_conductivity_A0,
-    )
+plot_ND_map(ntd_AD, n_freqs)
 
-    x = ufl.SpatialCoordinate(solverAD.get_mesh())
-    nc = ufl.cos(n * ufl.atan2(x[1], x[0]))
+ND_exact_eigenvals = []
 
-    solverAD.assemble_system(neumann_cond=nc)
-    solverAD.solve_system()
+for n in n_freqs:
+    coeffs = compute_solution_coefficients(r1, r2, n, polar_conductivities)
+    (alpha1, beta1), (alpha2, beta2), (alpha3, beta3) = coeffs
 
-    L2_error = solverAD.compute_error(u_exact, norm_type="L2")
-    L2_errors.append(L2_error)
+    ND_exact_eigenvals.append(alpha3 + beta3)
+
+print(np.sort(ND_fem_eigenvals))
+print(np.sort(np.diag(ntd_AD)))  # The diag gives the eigenvalues in this example
+print(np.sort(ND_exact_eigenvals))
+
+eigenval_error = abs(np.diag(ntd_AD) - ND_exact_eigenvals)
+eigenval_error = (np.diag(ntd_AD) - ND_exact_eigenvals) / ND_exact_eigenvals
+print(eigenval_error)
+
+fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+ax.stem(eigenval_error, basefmt=" ")
+ax.set_title("ND map eigenvalues errors")
+ax.grid(True)
+
+## Find error for different characteristic lengths and eigenfunctions (neumann conds)
+
+characteristic_lengths = [0.1, 0.05, 0.01]
+frequencies = [2, 16, 64, 128]
+L2_errors = np.zeros((len(characteristic_lengths), len(frequencies)))
+min_eigval_errors = []
+
+for i, cl in enumerate(characteristic_lengths):
+    print(f"Characeristic length: {cl}")
+    for j, n in enumerate(frequencies):
+        print(f"Frequency: {n}")
+
+        solverAD = FemConductivitySolver(mesh_characteristic_length=cl)
+        solverAD.set_conductivity(
+            my_conductivity_AD,
+            my_conductivity_A0,
+        )
+
+        x = ufl.SpatialCoordinate(solverAD.get_mesh())
+        nc = ufl.cos(n * ufl.atan2(x[1], x[0]))
+
+        solverAD.assemble_system(neumann_cond=nc)
+        solverAD.solve_system()
+
+        coeffs = compute_solution_coefficients(r1, r2, n, polar_conductivities)
+
+        L2_error = solverAD.compute_error(u_exact, norm_type="L2")
+        L2_errors[j, i] = L2_error
+
+        print(L2_error)
+
+    ntd_AD, n_freqs = solverAD.compute_ntd_map(max_freq=max_freq)
+    ND_fem_eigenvals = np.linalg.eigvals(ntd_AD)
+
+    ND_exact_eigenvals = []
+
+    for n in n_freqs:
+        coeffs = compute_solution_coefficients(r1, r2, n, polar_conductivities)
+        (alpha1, beta1), (alpha2, beta2), (alpha3, beta3) = coeffs
+
+        ND_exact_eigenvals.append(alpha3 + beta3)
+
+    min_eigval_errors.append(abs(min(ND_exact_eigenvals) - min(ND_fem_eigenvals)))
 
     solverAD.cleanup()
 
 # Plot L2 errors
-plot_errors(L2_errors, characteristic_lengths)
-
-print("L2 errors for different characteristic lengths:")
-print(L2_errors)
+plot_errors(L2_errors, characteristic_lengths, [f"n = {freq}" for freq in frequencies])
+plot_errors(
+    min_eigval_errors, characteristic_lengths, None, "Minimum eigenvalue errors"
+)
 
 plt.show()
