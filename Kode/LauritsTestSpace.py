@@ -27,7 +27,6 @@ from conductivity_functions import (
 # LambdaAD - LambdaA0 - DLambda(A0;c(alpha/beta)^2 I) <= 0
 
 characteristic_length = 0.05
-piecewise_const = True
 
 max_freq = 15
 
@@ -70,15 +69,13 @@ fig, axes = plot_conductivity_components(
 # %%
 
 solverA0 = FemConductivitySolver(mesh_characteristic_length=characteristic_length)
-solverA0.set_conductivity(my_conductivity_A0, my_conductivity_A0, piecewise_const)
+solverA0.set_conductivity(my_conductivity_A0, my_conductivity_A0)
 
 mesh = solverA0.mesh
 
 # Computing the "optimal" alpha, beta, c constants from checking the conductivity on each element
 solverAD = FemConductivitySolver(mesh=mesh)
-c, alpha, beta = solverAD.set_conductivity(
-    my_conductivity_AD, my_conductivity_A0, piecewise_const
-)
+c, alpha, beta = solverAD.set_conductivity(my_conductivity_AD, my_conductivity_A0)
 
 solverA0.compute_ntd_map(max_freq=max_freq)
 solverAD.compute_ntd_map(max_freq=max_freq)
@@ -94,7 +91,7 @@ const = c * (alpha**2) / (beta**2)
 ntd_A0 = solverA0.ntd_matrix
 ntd_AD = solverAD.ntd_matrix
 
-fig_components, axes_components = solverAD.plot_conductivity_components(piecewise_const)
+fig_components, axes_components = solverAD.plot_conductivity_components()
 
 # Solve with different boundary fluxes by modifying b
 x = ufl.SpatialCoordinate(solverA0.get_mesh())

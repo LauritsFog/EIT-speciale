@@ -62,7 +62,7 @@ def plot_conductivity_components(
             cmap=cmap,
             aspect="equal",
         )
-        ax.contour(X, Y, grid, levels=10, colors="white", linewidths=0.5, alpha=0.7)
+        # ax.contour(X, Y, grid, levels=50, colors="white", linewidths=0.5, alpha=0.7)
         ax.set_title(f"{label} Component")
         ax.set_xlabel("x")
         ax.set_ylabel("y")

@@ -21,6 +21,40 @@ from conductivity_functions import (
 # %%
 
 
+def plot_errors(errors, mesh_sizes=None, title="L² Error Convergence"):
+    """
+    Plot FEM errors on a semilogy (log-linear) plot.
+
+    Parameters
+    ----------
+    errors : array_like
+        List or array of L² (or other) error values.
+    mesh_sizes : array_like, optional
+        Mesh sizes (h-values) or degrees of freedom corresponding to each error.
+        If None, uses indices 1..N on the x-axis.
+    title : str, optional
+        Title of the plot.
+
+    Returns
+    -------
+    fig, ax : matplotlib Figure and Axes
+        The created plot objects.
+    """
+    errors = np.array(errors)
+    if mesh_sizes is None:
+        mesh_sizes = np.arange(1, len(errors) + 1)
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.semilogy(mesh_sizes, errors, "o-", linewidth=2, markersize=6)
+    ax.set_xlabel("Mesh size (h)")
+    ax.set_ylabel("Error")
+    ax.set_title(title)
+    ax.grid(True, which="both", linestyle="--", alpha=0.7)
+    plt.tight_layout()
+
+    return fig, ax
+
+
 def polar_to_euclidean(polar_conductivities, x, y):
     """
     Convert a diagonal polar conductivity tensor diag(a_r, a_theta)
@@ -145,7 +179,7 @@ def exact_solution(x, y, n, radii, coeffs, ks):
     coeffs : list of tuples
         [(alpha1, beta1), (alpha2, beta2), (alpha3, beta3), ...].
     ks : list of floats
-        Anisotropy exponents κ_j for each layer.
+        Anisotropy exponents k_j for each layer.
 
     Returns
     -------
@@ -159,21 +193,28 @@ def exact_solution(x, y, n, radii, coeffs, ks):
     # Initialize v_expr
     v_expr = 0.0
 
-    # Build layer-by-layer expression
-    for j in range(len(ks)):
-        if j == 0:
-            cond = ufl.lt(r, radii[0])
-        elif j < len(ks) - 1:
-            cond = ufl.And(ufl.ge(r, radii[j - 1]), ufl.lt(r, radii[j]))
-        else:
-            # Outermost layer: r >= r_{N-1}
-            cond = ufl.ge(r, radii[-1])
+    r1, r2 = radii
 
-        alpha_j, beta_j = coeffs[j]
-        k_j = ks[j]
+    # Layer 1
+    cond = ufl.ge(r, r2)  # r >= r_2
+    alpha_1, beta_1 = coeffs[2]
+    k_1 = ks[2]
+    v_1 = alpha_1 * r ** (k_1 * m) + beta_1 * r ** (-k_1 * m)
+    v_expr += ufl.conditional(cond, v_1, 0)
 
-        v_j = alpha_j * r ** (k_j * m) + beta_j * r ** (-k_j * m)
-        v_expr += ufl.conditional(cond, v_j, 0)
+    # Layer 2
+    cond = ufl.And(ufl.ge(r, r1), ufl.lt(r, r2))  # r_1 <= r < r_2
+    alpha_2, beta_2 = coeffs[1]
+    k_2 = ks[1]
+    v_2 = alpha_2 * r ** (k_2 * m) + beta_2 * r ** (-k_2 * m)
+    v_expr += ufl.conditional(cond, v_2, 0)
+
+    # Layer 3
+    cond = ufl.lt(r, r1)  # r < r_1
+    alpha_3, beta_3 = coeffs[0]
+    k_3 = ks[0]
+    v_3 = alpha_3 * r ** (k_3 * m) + beta_3 * r ** (-k_3 * m)
+    v_expr += ufl.conditional(cond, v_3, 0)
 
     # Real-valued field (cosine mode)
     u_expr = v_expr * ufl.cos(n * theta)
@@ -183,7 +224,6 @@ def exact_solution(x, y, n, radii, coeffs, ks):
 ## Configuration
 
 characteristic_length = 0.05
-piecewise_const = True
 
 max_freq = 10
 
@@ -206,23 +246,30 @@ shape_choice = "two_ellipses"
 shape_params = (0, 0, r1, r1, 0, 0, r2, r2)
 
 # Each layer given in polar coordinates (a_r, a_theta)
-polar_layers = [
-    (1.0, 1.0),
-    (8.0, 8.0),
-    (4.0, 4.0),
+polar_conductivities = [
+    (16.0, 8.0),  # 0 <= r < r1, layer 3
+    (2.0, 4.0),  # r1 <= r < r2, layer 2
+    (1.0, 1.0),  # r2 <= r <= 1, layer 1
 ]
 
 # Anisotropy factors κ_j = sqrt(a_theta^(j) / a_r^(j))
 ks = [
-    np.sqrt(polar_layers[0][1] / polar_layers[0][0]),
-    np.sqrt(polar_layers[1][1] / polar_layers[1][0]),
-    np.sqrt(polar_layers[2][1] / polar_layers[2][0]),
+    np.sqrt(polar_conductivities[0][1] / polar_conductivities[0][0]),  # Layer 3
+    np.sqrt(polar_conductivities[1][1] / polar_conductivities[1][0]),  # Layer 2
+    np.sqrt(polar_conductivities[2][1] / polar_conductivities[2][0]),  # Layer 1
 ]
 
-# Each returns (sigma_r, sigma_t)
-my_conductivity_A0 = lambda x, y: polar_to_euclidean(polar_layers[0], x, y)
-inclusion_conductivity_1 = lambda x, y: polar_to_euclidean(polar_layers[1], x, y)
-inclusion_conductivity_2 = lambda x, y: polar_to_euclidean(polar_layers[2], x, y)
+print("Anisotropy factors k_j: ")
+print(ks)
+
+# Check inner most layer (layer 3) first.
+my_conductivity_A0 = lambda x, y: polar_to_euclidean(polar_conductivities[2], x, y)
+inclusion_conductivity_1 = lambda x, y: polar_to_euclidean(
+    polar_conductivities[0], x, y
+)
+inclusion_conductivity_2 = lambda x, y: polar_to_euclidean(
+    polar_conductivities[1], x, y
+)
 
 
 def my_conductivity_AD(x, y):
@@ -236,26 +283,21 @@ def my_conductivity_AD(x, y):
     )
 
 
-coeffs = compute_solution_coefficients(r1, r2, n, polar_layers)
+coeffs = compute_solution_coefficients(r1, r2, n, polar_conductivities)
 print("Solution coefficients: ")
 print(coeffs[0])
 print(coeffs[1])
 print(coeffs[2])
+
+(alpha1, beta1), (alpha2, beta2), (alpha3, beta3) = coeffs
 
 # Visualization
 fig, axes = plot_conductivity_components(
     my_conductivity_AD, title=f"{shape_choice} Conductivity Distribution"
 )
 
-solverA0 = FemConductivitySolver(mesh_characteristic_length=characteristic_length)
-solverA0.set_conductivity(my_conductivity_A0, my_conductivity_A0, piecewise_const)
-
-mesh = solverA0.mesh
-
-solverAD = FemConductivitySolver(mesh=mesh)
-c, alpha, beta = solverAD.set_conductivity(
-    my_conductivity_AD, my_conductivity_A0, piecewise_const
-)
+solverAD = FemConductivitySolver(mesh_characteristic_length=characteristic_length)
+c, alpha, beta = solverAD.set_conductivity(my_conductivity_AD, my_conductivity_A0)
 
 solverAD.compute_ntd_map(max_freq=max_freq)
 
@@ -269,7 +311,10 @@ const = c * (alpha**2) / (beta**2)
 
 ntd_AD = solverAD.ntd_matrix
 
-fig_components, axes_components = solverAD.plot_conductivity_components(piecewise_const)
+print(ntd_AD[max_freq - n, max_freq - n])
+print(alpha3 + beta3)
+
+fig_components, axes_components = solverAD.plot_conductivity_components()
 
 ## Solve with example Neumann condition
 
@@ -286,41 +331,47 @@ def u_exact(x, y):
     return exact_solution(x, y, n, [r1, r2], coeffs, ks)
 
 
-L2_error = solverAD.compute_L2_error(u_exact)
+L2_error = solverAD.compute_error(u_exact, norm_type="L2")
 
 print(f"L2 error of u_h: {L2_error}")
 
-solverAD.plot_solution("Solution $u_f^A$")
+solverAD.plot_solution("FEM solution")
+solverAD.plot_exact_solution(u_exact, "Exact solution")
 
 # Plot entire boundary
 solverAD.plot_boundary_solution_with_neumann_cond(
     "Solution $u_f^A$ on boundary with Neumann condition"
 )
 
+solverAD.plot_fourier_coefficients()
+
 solverAD.cleanup()
 
-## Find error for different characteristic lengths
+# Find error for different characteristic lengths
 
-characteristic_lengths = [0.1, 0.05, 0.001, 0.0005]
+characteristic_lengths = [0.1, 0.05, 0.01, 0.005]
 L2_errors = []
 
 for cl in characteristic_lengths:
     solverAD = FemConductivitySolver(mesh_characteristic_length=cl)
-    c, alpha, beta = solverAD.set_conductivity(
-        my_conductivity_AD, my_conductivity_A0, piecewise_const
+    solverAD.set_conductivity(
+        my_conductivity_AD,
+        my_conductivity_A0,
     )
 
     x = ufl.SpatialCoordinate(solverAD.get_mesh())
     nc = ufl.cos(n * ufl.atan2(x[1], x[0]))
 
     solverAD.assemble_system(neumann_cond=nc)
-    uAD = solverAD.solve_system()
+    solverAD.solve_system()
 
-    L2_error = solverAD.compute_L2_error(u_exact)
+    L2_error = solverAD.compute_error(u_exact, norm_type="L2")
     L2_errors.append(L2_error)
 
     solverAD.cleanup()
 
+# Plot L2 errors
+plot_errors(L2_errors, characteristic_lengths)
 
 print("L2 errors for different characteristic lengths:")
 print(L2_errors)

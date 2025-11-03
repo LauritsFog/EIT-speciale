@@ -45,7 +45,7 @@ class FemConductivitySolver:
         else:
             self.mesh = mesh
             self.V = functionspace(mesh, ("Lagrange", 1))
-            self.setup_boundary_data()  # Setup boundary data for existing mesh
+            self.setup_boundary_mesh()  # Setup boundary data for existing mesh
 
     def setup_mesh(self):
         """Create the unit disk mesh with uniformly spaced boundary vertices"""
@@ -96,9 +96,9 @@ class FemConductivitySolver:
 
         # Create function space
         self.V = functionspace(self.mesh, ("Lagrange", 1))
-        self.setup_boundary_data()
+        self.setup_boundary_mesh()
 
-    def setup_boundary_data(self):
+    def setup_boundary_mesh(self):
         """Find and save boundary vertices and coordinates"""
         coords_all = self.mesh.geometry.x
 
@@ -111,9 +111,7 @@ class FemConductivitySolver:
         # Coordinates of boundary vertices
         self.boundary_coords = coords_all[self.boundary_vertices]
 
-    def set_conductivity(
-        self, conductivity_func, background_conductivity_func, discontinuous=True
-    ):
+    def set_conductivity(self, conductivity_func, background_conductivity_func):
         """
          Set the conductivity tensor and tag inclusions based on the
          positive definiteness of (A_D - A_0 - cI).
@@ -137,11 +135,7 @@ class FemConductivitySolver:
              If False, use Continuous Lagrange (CG1).
         """
 
-        # Choose function space type
-        element_type = (
-            ("Discontinuous Lagrange", 0) if discontinuous else ("Lagrange", 1)
-        )
-        V_tensor = functionspace(self.mesh, (element_type[0], element_type[1], (2, 2)))
+        V_tensor = functionspace(self.mesh, ("Discontinuous Lagrange", 0, (2, 2)))
         self.conductivity = Function(V_tensor)
 
         topology = self.mesh.topology
@@ -160,34 +154,20 @@ class FemConductivitySolver:
         processed_dofs = set()
         geometry = self.mesh.geometry.x
 
-        if discontinuous:
-            # One DOF per cell (DG0)
-            for cell in range(n_cells):
-                cell_dofs = dofmap.cell_dofs(cell)
-                # a11, a12, a22 = (
-                #     AD_values[cell, 0, 0],
-                #     AD_values[cell, 0, 1],
-                #     AD_values[cell, 1, 1],
-                # )
-                x_m, y_m = cell_midpoints[cell][:2]
-                a11, a12, a22 = conductivity_func(x_m, y_m)
-                values[cell_dofs[0] * 4 + 0] = a11
-                values[cell_dofs[0] * 4 + 1] = a12
-                values[cell_dofs[0] * 4 + 2] = a12
-                values[cell_dofs[0] * 4 + 3] = a22
-        else:
-            # Continuous version (CG1): assign per vertex
-            for cell in range(n_cells):
-                for dof in dofmap.cell_dofs(cell):
-                    if dof in processed_dofs:
-                        continue
-                    processed_dofs.add(dof)
-                    x, y = geometry[dof][:2]
-                    a11, a12, a22 = conductivity_func(x, y)
-                    values[dof * 4 + 0] = a11
-                    values[dof * 4 + 1] = a12
-                    values[dof * 4 + 2] = a12
-                    values[dof * 4 + 3] = a22
+        # One DOF per cell (DG0)
+        for cell in range(n_cells):
+            cell_dofs = dofmap.cell_dofs(cell)
+            # a11, a12, a22 = (
+            #     AD_values[cell, 0, 0],
+            #     AD_values[cell, 0, 1],
+            #     AD_values[cell, 1, 1],
+            # )
+            x_m, y_m = cell_midpoints[cell][:2]
+            a11, a12, a22 = conductivity_func(x_m, y_m)
+            values[cell_dofs[0] * 4 + 0] = a11
+            values[cell_dofs[0] * 4 + 1] = a12
+            values[cell_dofs[0] * 4 + 2] = a12
+            values[cell_dofs[0] * 4 + 3] = a22
 
         self.conductivity.x.scatter_forward()
 
@@ -343,36 +323,65 @@ class FemConductivitySolver:
         self.uh.x.array[: len(x_local[0])] = x_local[0]
         self.uh.x.scatter_forward()
 
-    def compute_L2_error(self, u_exact):
+    def compute_error(self, exact_solution, norm_type="L2"):
         """
-        Compute the L²-norm of the error between the FEM solution u_h
-        and an exact (real-valued) solution function u_exact(x, y).
+        Compute FEM error between u_h and exact_solution.
 
         Parameters
         ----------
-        u_exact : callable
-            Function u_exact(x, y) returning the true solution at coordinates (x, y).
+        exact_solution : callable or dolfinx.Function
+            The exact solution u_exact(x, y), either:
+            - a UFL function of (x[0], x[1]), or
+            - an already interpolated dolfinx.Function.
+        norm_type : str, optional
+            Type of norm to compute:
+            - "L2"  : compute the L²(Ω) error
+            - "Linf": compute the max-norm (discrete at mesh vertices)
 
         Returns
         -------
-        L2_error : float
-            The L²-norm of the FEM error ||u_h - u_exact||_{L²(Ω)}.
+        error_value : float
+            The computed error in the chosen norm.
         """
         if self.uh is None:
-            raise ValueError(
-                "FEM solution (uh) not available. Run solve_system() first."
-            )
+            raise ValueError("Must solve the problem first")
 
-        # Define expression for u_h - u_exact
         x = ufl.SpatialCoordinate(self.mesh)
-        u_diff_expr = self.uh - u_exact(x[0], x[1])
+        u_exact_expr = exact_solution(x[0], x[1])
+        u_exact_fun = Function(self.V)
+        u_exact_fun.interpolate(
+            Expression(u_exact_expr, self.V.element.interpolation_points())
+        )
 
-        # Form and assemble the L2 norm
-        L2_form = form(ufl.inner(u_diff_expr, u_diff_expr) * ufl.dx)
-        error_squared = assemble_scalar(L2_form)
-        L2_error = float(np.sqrt(error_squared))
+        # Compute difference field
+        diff = Function(self.V)
+        diff.x.array[:] = self.uh.x.array - u_exact_fun.x.array
 
-        return L2_error
+        # Choose norm type
+        if norm_type == "L2":
+            error_form = form(ufl.inner(diff, diff) * ufl.dx)
+            error_squared = assemble_scalar(error_form)
+            return float(np.sqrt(error_squared))
+
+        elif norm_type == "Linf":
+            # Compute discrete L∞ error at vertices
+            return float(np.max(np.abs(diff.x.array)))
+
+        else:
+            raise ValueError("norm_type must be 'L2' or 'Linf'")
+
+    # def compute_error(self, exact_solution):
+    #     """Compute L2 error against exact solution"""
+    #     if self.uh is None:
+    #         raise ValueError("Must solve the problem first")
+
+    #     x = ufl.SpatialCoordinate(self.mesh)
+    #     u_exact_expr = exact_solution(x[0], x[1])
+    #     diff = self.uh - u_exact_expr
+
+    #     error_form = form(ufl.inner(diff, diff) * ufl.dx)
+    #     error_squared = assemble_scalar(error_form)
+    #     return float(np.sqrt(error_squared))
 
     def compute_ntd_map(self, max_freq=None):
         """Compute Neumann-to-Dirichlet map with ordering [a_N,...,a₁, b₁,...,b_N]"""
@@ -476,6 +485,61 @@ class FemConductivitySolver:
         # Return the plot objects WITHOUT showing
         return fig, ax
 
+    def plot_exact_solution(self, exact_solution, title="Exact solution u_exact"):
+        """
+        Plot an exact UFL solution u_exact(x, y) on the FEM mesh.
+
+        Parameters
+        ----------
+        exact_solution : callable
+            A function that takes UFL symbols (x, y) and returns a UFL expression.
+            Example:
+                def u_exact(x, y):
+                    return ufl.sqrt(x**2 + y**2) * ufl.cos(2*ufl.atan_2(y, x))
+        title : str, optional
+            Title for the plot.
+
+        Returns
+        -------
+        fig, ax : matplotlib Figure and Axes
+        """
+
+        # Define symbolic coordinates
+        x = ufl.SpatialCoordinate(self.mesh)
+        u_expr = exact_solution(x[0], x[1])
+
+        # Interpolate the UFL expression into FEM space
+        u_exact_fun = Function(self.V)
+        expr = Expression(u_expr, self.V.element.interpolation_points())
+        u_exact_fun.interpolate(expr)
+
+        # Get mesh coordinates and cells
+        coords = self.mesh.geometry.x.copy()
+        topology = self.mesh.topology
+        tdim = topology.dim
+        if topology.connectivity(tdim, 0) is None:
+            topology.create_connectivity(tdim, 0)
+        cells = topology.connectivity(tdim, 0).array.reshape(-1, tdim + 1)
+
+        # Extract (x, y) and function values
+        xvals = coords[:, 0]
+        yvals = coords[:, 1]
+        u_vals = u_exact_fun.x.array.real
+
+        # Plot using Matplotlib triangulation
+        triang = tri.Triangulation(xvals, yvals, cells)
+        fig, ax = plt.subplots(figsize=(6, 5))
+
+        cont = ax.tricontourf(triang, u_vals, levels=50, cmap="viridis")
+        ax.tricontour(triang, u_vals, levels=50, colors="k", linewidths=0.5)
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_title(title)
+        ax.axis("equal")
+        fig.colorbar(cont, ax=ax, label="u_exact")
+
+        return fig, ax
+
     def plot_boundary_solution_with_neumann_cond(
         self, title="Boundary solution and Neumann condition"
     ):
@@ -491,10 +555,10 @@ class FemConductivitySolver:
         fig, ax = plt.subplots(figsize=(10, 5))
 
         # Get sorted boundary solutoin
-        theta_sorted, u_sorted, coords_sorted = self.get_ordered_boundary_solution()
+        theta_sorted, u_sorted, _ = self.get_ordered_boundary_solution()
 
         # Get sorted boundary flux
-        theta_flux, flux_sorted, coords_flux = self.get_ordered_neumann_cond()
+        theta_flux, flux_sorted, _ = self.get_ordered_neumann_cond()
 
         # Create the plot
         ax.plot(
@@ -539,9 +603,7 @@ class FemConductivitySolver:
 
         return fig, ax
 
-    def plot_conductivity_components(
-        self, piecewise_const, title="Conductivity Tensor Components"
-    ):
+    def plot_conductivity_components(self, title="Conductivity Tensor Components"):
         """
         Plot the three components of the anisotropic conductivity tensor.
         Works for both CG1 (continuous) and DG0 (discontinuous) spaces.
@@ -573,32 +635,20 @@ class FemConductivitySolver:
         # Compute limits
         all_vals = np.concatenate([a_vals, b_vals, c_vals])
         vmin, vmax = np.min(all_vals), np.max(all_vals)
-        levels = np.linspace(vmin, vmax + 1e-10, 100)
 
         triang = tri.Triangulation(x, y, cells)
 
         # Helper plotting function
         def plot_component(ax, vals, title, label):
-            if piecewise_const:
-                # DG0 -> one value per cell (use tripcolor)
-                tpc = ax.tripcolor(
-                    triang,
-                    facecolors=vals[: len(cells)],
-                    cmap="viridis",
-                    vmin=vmin,
-                    vmax=vmax,
-                    shading="flat",
-                )
-            else:
-                # CG1 -> one value per vertex (use tricontourf)
-                tpc = ax.tricontourf(
-                    triang,
-                    vals[: len(x)],
-                    levels=levels,
-                    cmap="viridis",
-                    vmin=vmin,
-                    vmax=vmax,
-                )
+            # DG0 -> one value per cell (use tripcolor)
+            tpc = ax.tripcolor(
+                triang,
+                facecolors=vals[: len(cells)],
+                cmap="viridis",
+                vmin=vmin,
+                vmax=vmax,
+                shading="flat",
+            )
 
             ax.triplot(triang, color="black", linewidth=0.3, alpha=0.3)
             ax.set_title(title)
@@ -624,7 +674,7 @@ class FemConductivitySolver:
 
         if self.boundary_vertices is None or self.boundary_coords is None:
             raise ValueError(
-                "Boundary data not initialized. Call setup_boundary_data() first."
+                "Boundary data not initialized. Call setup_boundary_mesh() first."
             )
 
         # FEM solution at boundary vertices
