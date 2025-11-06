@@ -9,15 +9,13 @@ from dolfinx.fem import (
     functionspace,
     assemble_scalar,
     form,
-    locate_dofs_geometrical,
 )
-from dolfinx.mesh import locate_entities
 import ufl
 from dolfinx.io import gmshio
 import gmsh
 from scifem import create_real_functionspace
 from dolfinx.fem.petsc import apply_lifting, set_bc
-from dolfinx.mesh import meshtags, locate_entities_boundary, compute_midpoints
+from dolfinx.mesh import meshtags, compute_midpoints
 import matplotlib.pyplot as plt
 import matplotlib.tri as tri
 from dolfinx.cpp.la.petsc import get_local_vectors
@@ -48,7 +46,7 @@ class FemConductivitySolver:
             self.setup_boundary_mesh()  # Setup boundary data for existing mesh
 
     def setup_mesh(self):
-        """Create the unit disk mesh with uniformly spaced boundary vertices"""
+        """Create the unit disk mesh and partition it"""
         gmsh.initialize()
 
         # Create disk
@@ -61,12 +59,9 @@ class FemConductivitySolver:
         boundary_curves = gmsh.model.getBoundary([(2, unitdisk)], oriented=False)
 
         # Set mesh size specifically on boundary curves
-        target_boundary_spacing = (
-            2 * np.pi * self.mesh_characteristic_length
-        )  # Adjust as needed
+        target_boundary_spacing = 2 * np.pi * self.mesh_characteristic_length
 
         for curve in boundary_curves:
-            # Set finer mesh size on boundary curves
             gmsh.model.mesh.setSize(gmsh.model.getEntities(1), target_boundary_spacing)
 
         gmsh.model.addPhysicalGroup(gdim, [unitdisk], 1)
@@ -78,8 +73,6 @@ class FemConductivitySolver:
         gmsh.option.setNumber(
             "Mesh.CharacteristicLengthMax", self.mesh_characteristic_length
         )
-
-        # Enable mesh size from points for better boundary distribution
         gmsh.option.setNumber("Mesh.CharacteristicLengthFromPoints", 1)
         gmsh.option.setNumber("Mesh.CharacteristicLengthFromCurvature", 0)
 
@@ -151,17 +144,10 @@ class FemConductivitySolver:
         # Assign values to self.conductivity
         dofmap = V_tensor.dofmap
         values = self.conductivity.x.array
-        processed_dofs = set()
-        geometry = self.mesh.geometry.x
 
         # One DOF per cell (DG0)
         for cell in range(n_cells):
             cell_dofs = dofmap.cell_dofs(cell)
-            # a11, a12, a22 = (
-            #     AD_values[cell, 0, 0],
-            #     AD_values[cell, 0, 1],
-            #     AD_values[cell, 1, 1],
-            # )
             x_m, y_m = cell_midpoints[cell][:2]
             a11, a12, a22 = conductivity_func(x_m, y_m)
             values[cell_dofs[0] * 4 + 0] = a11
@@ -472,7 +458,7 @@ class FemConductivitySolver:
         triang = tri.Triangulation(x, y, cells)
 
         # Create the plot
-        cont = ax.tricontourf(triang, u_vals, levels=50, cmap="viridis")
+        cont = ax.tricontourf(triang, u_vals, levels=50, cmap="turbo")
         ax.tricontour(triang, u_vals, levels=50, colors="k", linewidths=0.5)
         ax.set_xlabel("x")
         ax.set_ylabel("y")
@@ -530,7 +516,7 @@ class FemConductivitySolver:
         triang = tri.Triangulation(xvals, yvals, cells)
         fig, ax = plt.subplots(figsize=(6, 5))
 
-        cont = ax.tricontourf(triang, u_vals, levels=50, cmap="viridis")
+        cont = ax.tricontourf(triang, u_vals, levels=50, cmap="turbo")
         ax.tricontour(triang, u_vals, levels=50, colors="k", linewidths=0.5)
         ax.set_xlabel("x")
         ax.set_ylabel("y")
@@ -603,7 +589,7 @@ class FemConductivitySolver:
 
         return fig, ax
 
-    def plot_conductivity_components(self, title="Conductivity Tensor Components"):
+    def plot_conductivity_components(self, title="Conductivity Tensor Elements"):
         """
         Plot the three components of the anisotropic conductivity tensor.
         Works for both CG1 (continuous) and DG0 (discontinuous) spaces.
@@ -658,9 +644,9 @@ class FemConductivitySolver:
             plt.colorbar(tpc, ax=ax, label=label)
 
         # Plot components
-        plot_component(axes[0], a_vals, r"$k_{11}$ Component", r"$k_{11}$")
-        plot_component(axes[1], b_vals, r"$k_{12}$ Component", r"$k_{12}$")
-        plot_component(axes[2], c_vals, r"$k_{22}$ Component", r"$k_{22}$")
+        plot_component(axes[0], a_vals, r"$a_{11}$", r"$a_{11}$")
+        plot_component(axes[1], b_vals, r"$a_{12}$", r"$a_{12}$")
+        plot_component(axes[2], c_vals, r"$a_{22}$", r"$a_{22}$")
 
         fig.suptitle(title, fontsize=16)
         plt.tight_layout()

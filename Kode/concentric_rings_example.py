@@ -197,16 +197,22 @@ beta_tol = 0
 r1, r2 = 0.3, 0.7
 
 # Eigenmode frequency
-n = 2
+n = 3
 
 shape_choice = "two_ellipses"
 shape_params = (0, 0, r1, r1, 0, 0, r2, r2)
 
 # Each layer given in polar coordinates (a_r, a_theta)
+# polar_conductivities = [
+#     (16.0, 8.0),  # 0 <= r < r1, layer 3
+#     (2.0, 4.0),  # r1 <= r < r2, layer 2
+#     (1.0, 1.0),  # r2 <= r <= 1, layer 1
+# ]
+
 polar_conductivities = [
-    (16.0, 8.0),  # 0 <= r < r1, layer 3
-    (2.0, 4.0),  # r1 <= r < r2, layer 2
-    (1.0, 1.0),  # r2 <= r <= 1, layer 1
+    (5, 0.3),  # 0 <= r < r1, layer 3
+    (0.5, 0.2),  # r1 <= r < r2, layer 2
+    (0.1, 0.1),  # r2 <= r <= 1, layer 1
 ]
 
 # Anisotropy factors κ_j = sqrt(a_theta^(j) / a_r^(j))
@@ -317,7 +323,7 @@ ax.grid(True)
 
 ## Find error for different characteristic lengths and eigenfunctions (neumann conds)
 
-characteristic_lengths = [0.1, 0.05, 0.01]
+characteristic_lengths = [0.1, 0.05, 0.01, 0.005]
 frequencies = [2, 16, 64, 128]
 L2_errors = np.zeros((len(characteristic_lengths), len(frequencies)))
 min_eigval_errors = []
@@ -342,7 +348,7 @@ for i, cl in enumerate(characteristic_lengths):
         coeffs = compute_solution_coefficients(r1, r2, n, polar_conductivities)
 
         L2_error = solverAD.compute_error(u_exact, norm_type="L2")
-        L2_errors[j, i] = L2_error
+        L2_errors[i, j] = L2_error
 
         print(L2_error)
 
@@ -362,7 +368,9 @@ for i, cl in enumerate(characteristic_lengths):
     solverAD.cleanup()
 
 # Plot L2 errors
-plot_errors(L2_errors, characteristic_lengths, [f"n = {freq}" for freq in frequencies])
+plot_errors(
+    L2_errors.T, characteristic_lengths, [f"n = {freq}" for freq in frequencies]
+)
 plot_errors(
     min_eigval_errors, characteristic_lengths, None, "Minimum eigenvalue errors"
 )

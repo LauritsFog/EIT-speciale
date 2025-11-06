@@ -2,17 +2,16 @@
 
 from fem_solver import FemConductivitySolver
 import matplotlib.pyplot as plt
-import numpy as np
 import ufl
 from plotting_functions import (
     plot_conductivity_components,
     plot_highlighted_elements,
     plot_highlighted_elements_with_inclusions,
-    plot_test_matrix_test_matrix_eigenvalues,
+    plot_test_matrix_eigenvalues,
+    plot_mesh_partitions,
 )
 from inner_reconstruction_method import (
     find_inclusion_elements,
-    find_inclusion_elements_manual,
 )
 from conductivity_functions import (
     conductivity_AD,
@@ -26,11 +25,15 @@ from conductivity_functions import (
 # Frechet derivative DLambda(A0;c(alpha/beta)^2 I) with test
 # LambdaAD - LambdaA0 - DLambda(A0;c(alpha/beta)^2 I) <= 0
 
-characteristic_length = 0.05
+characteristic_length = 0.02
 
-max_freq = 15
+max_freq = 30
 
-sampling_stride = 1
+# Sometimes the total number of partitions is larger due to splitting of disconnected partitions. Set to None for no partitioning
+num_partitions = 5000
+
+# min_eig -> 1 / (1 + np.exp(-sigmoid_scaling * min_eig)). Set to None for no scaling
+sigmoid_scaling = 1e6
 
 # Tolerance in the inclusion test: min(eigenvalues) + tol > 0
 tol = 1e-15
@@ -41,13 +44,13 @@ beta_tol = 0
 
 # Example setup
 shape_choice = "two_ellipses"
-shape_params = (-0.4, -0.4, 0.3, 0.2, 0.4, 0.4, 0.3, 0.2)
+shape_params = (-0.4, -0.4, 0.3, 0.2, 0.4, 0.4, 0.3, 0.2)  # Center, axis, center, axis
 
-# Define conductivity fields
+# Define conductivities
 my_conductivity_A0 = lambda x, y: (1, 0, 1)
 
-inclusion_conductivity_1 = lambda x, y: (5, 0, 5)
-inclusion_conductivity_2 = lambda x, y: (10, 0, 8)
+inclusion_conductivity_1 = lambda x, y: (15, 0, 5)
+inclusion_conductivity_2 = lambda x, y: (5, 0, 15)
 
 
 def my_conductivity_AD(x, y):
@@ -93,36 +96,40 @@ ntd_AD = solverAD.ntd_matrix
 
 fig_components, axes_components = solverAD.plot_conductivity_components()
 
-# Solve with different boundary fluxes by modifying b
-x = ufl.SpatialCoordinate(solverA0.get_mesh())
+# # Solve with different boundary fluxes by modifying b
+# x = ufl.SpatialCoordinate(solverA0.get_mesh())
 
-nc = ufl.cos(3 * ufl.atan2(x[1], x[0]))  # Neumann condition (flux) on boundary
+# nc = ufl.cos(3 * ufl.atan2(x[1], x[0]))  # Neumann condition (flux) on boundary
 
-# Re-assemble only the RHS with new flux
-solverAD.assemble_system(neumann_cond=nc)
-uAD = solverAD.solve_system()
+# # Re-assemble only the RHS with new flux
+# solverAD.assemble_system(neumann_cond=nc)
+# uAD = solverAD.solve_system()
 
-# Get plot objects WITHOUT displaying them
-solverAD.plot_solution("Solution $u_f^A$")
+# # Get plot objects WITHOUT displaying them
+# solverAD.plot_solution("Solution $u_f^A$")
 
-# Plot entire boundary
-solverAD.plot_boundary_solution_with_neumann_cond(
-    "Solution $u_f^A$ on boundary with Neumann condition"
-)
+# # Plot entire boundary
+# solverAD.plot_boundary_solution_with_neumann_cond(
+#     "Solution $u_f^A$ on boundary with Neumann condition"
+# )
 
 # Call the function directly
-inclusion_indexes, test_matrix_eigenvalues = find_inclusion_elements_manual(
+inclusion_indexes, test_matrix_eigenvalues, partitions = find_inclusion_elements(
     mesh=mesh,
     solutions_A0=solverA0.basis_solutions,
     ntd_AD=ntd_AD,
     ntd_A0=ntd_A0,
-    sampling_stride=sampling_stride,
+    num_partitions=num_partitions,
     const=const,
     tol=tol,
 )
 
 plot_highlighted_elements_with_inclusions(mesh, inclusion_indexes, solverAD.cell_tags)
 
-plot_test_matrix_test_matrix_eigenvalues(mesh, test_matrix_eigenvalues)
+plot_test_matrix_eigenvalues(
+    mesh, test_matrix_eigenvalues, sigmoid_scaling=sigmoid_scaling
+)
+
+# plot_mesh_partitions(mesh, partitions)
 
 plt.show()
