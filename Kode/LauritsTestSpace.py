@@ -25,18 +25,18 @@ from conductivity_functions import (
 # Frechet derivative DLambda(A0;c(alpha/beta)^2 I) with test
 # LambdaAD - LambdaA0 - DLambda(A0;c(alpha/beta)^2 I) <= 0
 
-characteristic_length = 0.02
+characteristic_length = 0.05
 
-max_freq = 30
+max_freq = 23
 
 # Sometimes the total number of partitions is larger due to splitting of disconnected partitions. Set to None for no partitioning
-num_partitions = 5000
+num_partitions = None
 
 # min_eig -> 1 / (1 + np.exp(-sigmoid_scaling * min_eig)). Set to None for no scaling
-sigmoid_scaling = 1e6
+sigmoid_scaling = 1e10
 
 # Tolerance in the inclusion test: min(eigenvalues) + tol > 0
-tol = 1e-15
+tol = 0
 
 c_tol = 0
 alpha_tol = 0
@@ -122,6 +122,17 @@ inclusion_indexes, test_matrix_eigenvalues, partitions = find_inclusion_elements
     num_partitions=num_partitions,
     const=const,
     tol=tol,
+)
+
+inclusion_min_eig_vals = [
+    test_matrix_eigenvalues[i]
+    for i in inclusion_indexes
+    if i in test_matrix_eigenvalues
+]
+
+print(f"Minimum eigenvalue of inclusion elements: {min(inclusion_min_eig_vals)}")
+print(
+    f"Average eigenvalue of inclusion elements: {sum(inclusion_min_eig_vals) / len(inclusion_min_eig_vals)}"
 )
 
 plot_highlighted_elements_with_inclusions(mesh, inclusion_indexes, solverAD.cell_tags)

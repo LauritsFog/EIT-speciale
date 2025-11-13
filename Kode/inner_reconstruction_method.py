@@ -289,7 +289,10 @@ def find_inclusion_elements(
     print(
         f"Found {len(inclusion_indices)} potential inclusion elements across all partitions"
     )
-    return inclusion_indices, eigenvalue_dict, partitions
+    if num_partitions is None:
+        return inclusion_indices, eigenvalue_dict, None
+    else:
+        return inclusion_indices, eigenvalue_dict, partitions
 
 
 # def find_inclusion_elements(

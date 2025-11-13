@@ -323,8 +323,8 @@ ax.grid(True)
 
 ## Find error for different characteristic lengths and eigenfunctions (neumann conds)
 
-characteristic_lengths = [0.1, 0.05, 0.01, 0.005]
-frequencies = [2, 16, 64, 128]
+characteristic_lengths = [0.2, 0.1, 0.05, 0.01]
+frequencies = [16]
 L2_errors = np.zeros((len(characteristic_lengths), len(frequencies)))
 min_eigval_errors = []
 
