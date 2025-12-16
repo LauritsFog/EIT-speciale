@@ -35,6 +35,28 @@ def is_inside_L_shape(x, y, params):
 
     return True
 
+import numpy as np
+
+def is_inside_isotropy_test(x, y):
+    """
+    NumPy version of L-shape membership test.
+    Works with scalars or numpy arrays.
+    """
+    angle = np.pi / 4  # 45 degrees
+    rot = np.array([
+        [np.cos(angle), -np.sin(angle)], 
+        [np.sin(angle), np.cos(angle)]])  # 45 degrees rotation
+
+    point = np.array([x, y])
+    rotated_point = rot @ point
+    X,Y = rotated_point[0], rotated_point[1]
+
+    in_long = (X<2/11) & (X>0) & (np.abs(Y)<1/2)
+    in_short = (Y>(1/2-2/11)) & (Y<1/2) & (X>0) & (X<1/2)
+
+    return (in_long | in_short)
+
+
 
 # ---------- Main conductivity definition ----------
 
@@ -76,6 +98,12 @@ def conductivity_AD(x, y, background_func, inclusion_funcs, shape_choice, shape_
 
     elif shape_choice == "L_shape":
         if is_inside_L_shape(x, y, shape_params):
+            return inclusion_funcs(x, y)
+        else:
+            return background_func(x, y)
+    
+    elif shape_choice == "isotropy_test":
+        if is_inside_isotropy_test(x, y):
             return inclusion_funcs(x, y)
         else:
             return background_func(x, y)

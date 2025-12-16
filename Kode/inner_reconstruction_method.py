@@ -270,6 +270,7 @@ def find_inclusion_elements(
                     Dfrechet[i, j] = -const * grad_dot * area
 
             check = Dfrechet - ntd_AD + ntd_A0
+            check = (check + check.T) / 2  # ensure symmetry
             min_eig = np.min(np.real(np.linalg.eigvals(check)))
 
             min_eig_values.append(min_eig)
@@ -306,6 +307,7 @@ def find_inclusion_elements(
                             Dfrechet[j, i] = Dfrechet[i, j]
 
             check = Dfrechet - ntd_AD + ntd_A0
+            check = (check + check.T) / 2  # ensure symmetry
             min_eig = np.min(np.real(np.linalg.eigvals(check)))
             is_inclusion = min_eig + tol > 0
 

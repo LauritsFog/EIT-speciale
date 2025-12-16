@@ -172,6 +172,12 @@ class FemConductivitySolver:
             b11, b12, b22 = background_conductivity_func(x_m, y_m)
             A_0 = np.array([[b11, b12], [b12, b22]])
 
+            alpha_new = min(np.linalg.eigvals(A_D))
+            alpha = min(alpha, alpha_new)
+
+            beta_new = max(np.linalg.eigvals(A_D))
+            beta = max(beta, beta_new)
+
             # Check if A_D and A_0 are identical
             if (
                 abs(a11 - b11) < 1e-14
@@ -182,12 +188,6 @@ class FemConductivitySolver:
 
             c_new = min(np.linalg.eigvals(A_D)) - max(np.linalg.eigvals(A_0))
             c = min(c, c_new)
-
-            alpha_new = min(np.linalg.eigvals(A_D))
-            alpha = min(alpha, alpha_new)
-
-            beta_new = max(np.linalg.eigvals(A_D))
-            beta = max(beta, beta_new)
 
         # Check if c a real number. If not, then A_D = A_0 and there are no inclusions.
         if np.isfinite(c):
