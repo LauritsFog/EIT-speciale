@@ -1,39 +1,7 @@
 import numpy as np
-from mpi4py import MPI
-from dolfinx.fem import (
-    functionspace,
-)
-from dolfinx.io import gmshio
-import gmsh
 
+# import pymetis
 from sklearn.cluster import KMeans
-
-
-def add_noise(ntd_matrix, noise_level):
-    def H_minus_half_norm(E):
-        E_mod = E.copy()
-
-        for i, j in np.ndindex(E.shape):
-            m = i - E.shape[0] // 2
-            n = j - E.shape[1] // 2
-            E_mod[i, j] = (
-                E_mod[i, j]
-                * (1 + abs(m) ** 2) ** (-0.25)
-                * (1 + abs(n) ** 2) ** (-0.25)
-            )  # (13.44) in inv prob book
-
-        return np.linalg.norm(E_mod, ord=2)
-
-    # Create noise matrix with N(0,1) entries
-    noise_matrix = np.random.normal(loc=0.0, scale=1.0, size=ntd_matrix.shape)
-
-    noise_matrix = 0.5 * (noise_matrix + noise_matrix.T)
-
-    noise_scaling = noise_level / H_minus_half_norm(noise_matrix)
-
-    ntd_matrix_noise = ntd_matrix + noise_scaling * noise_matrix
-
-    return ntd_matrix_noise
 
 
 # Possibly use instead of computing all eigenvalues. This is allegedly faster.
@@ -43,81 +11,6 @@ def is_pos_def(K):
         return True
     except np.linalg.LinAlgError:
         return False
-
-
-def setup_nonuniform_mesh(characteristic_length):
-    """
-    Create the unit disk mesh with non-uniform element size (smaller elements
-    at the boundary, larger elements at the center) and return the mesh,
-    cell_markers, and facet_markers.
-
-    Args:
-        characteristic_length (float): A base value used to define l_min.
-
-    Returns:
-        tuple: (mesh, cell_markers, facet_markers)
-    """
-    gmsh.initialize()
-
-    # Define characteristic lengths
-    l_min = characteristic_length * 1
-    l_max = characteristic_length * 10.0
-
-    # Create disk
-    unitdisk = gmsh.model.occ.addDisk(0, 0, 0, 1, 1)
-    gmsh.model.occ.synchronize()
-    gdim = 2
-
-    # Get the ID of the boundary curve (the edge of the disk)
-    boundary_curves = gmsh.model.getBoundary([(2, unitdisk)], oriented=False)
-    boundary_tags = [curve[1] for curve in boundary_curves]
-
-    # Define a Distance Field (Field 1)
-    # This field computes the distance to the boundary curves (tags)
-    gmsh.model.mesh.field.add("Distance", 1)
-    gmsh.model.mesh.field.setNumbers(1, "CurvesList", boundary_tags)
-
-    # Define a Threshold Field (Field 2)
-    # This field defines the mesh size based on the distance to the boundary.
-    gmsh.model.mesh.field.add("Threshold", 2)
-    gmsh.model.mesh.field.setNumber(2, "InField", 1)
-
-    # lc_max is the size far away from the boundary (i.e., the center)
-    gmsh.model.mesh.field.setNumber(2, "LcMax", l_max)
-
-    # lc_min is the size close to the boundary
-    gmsh.model.mesh.field.setNumber(2, "LcMin", l_min)
-
-    # Distances to define the transition:
-    # Size is l_min when distance is < d_min
-    gmsh.model.mesh.field.setNumber(2, "DistMin", 0.05)
-    # Size is l_max when distance is > d_max
-    gmsh.model.mesh.field.setNumber(2, "DistMax", 0.5)
-
-    # Set the field as the background mesh size field
-    gmsh.model.mesh.field.setAsBackgroundMesh(2)
-
-    # Create a physical group for the domain
-    domain_tag = 1
-    gmsh.model.addPhysicalGroup(gdim, [unitdisk], domain_tag)
-
-    # Set global options and generate the mesh
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", l_min)
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", l_max)
-    gmsh.model.mesh.generate(gdim)
-
-    # Convert Gmsh model to DOLFINx mesh and markers
-    gmsh_model_rank = 0
-
-    mesh_comm = MPI.COMM_WORLD
-
-    mesh, cell_markers, facet_markers = gmshio.model_to_mesh(
-        gmsh.model, mesh_comm, gmsh_model_rank, gdim=gdim
-    )
-
-    gmsh.finalize()
-
-    return mesh, cell_markers, facet_markers
 
 
 def create_mesh_partitions(mesh, num_partitions):
@@ -176,6 +69,83 @@ def create_mesh_partitions(mesh, num_partitions):
         f"Created {len(partitions)} connected partitions (requested {num_partitions})."
     )
     return partitions
+
+
+# def create_mesh_partitions(mesh, num_partitions, include_ghosts=False):
+#     tdim = mesh.topology.dim
+#     mesh.topology.create_connectivity(tdim, tdim - 1)
+#     mesh.topology.create_connectivity(tdim - 1, tdim)
+
+#     cell_imap = mesh.topology.index_map(tdim)
+#     n_local = cell_imap.size_local
+#     n_ghost = cell_imap.num_ghosts
+
+#     if include_ghosts:
+#         local_cells = np.arange(n_local + n_ghost, dtype=np.int32)
+#     else:
+#         local_cells = np.arange(n_local, dtype=np.int32)
+
+#     # Build adjacency list for METIS
+#     c_f = mesh.topology.connectivity(tdim, tdim - 1)
+#     f_c = mesh.topology.connectivity(tdim - 1, tdim)
+#     adj = []
+
+#     for c in local_cells:
+#         nbrs = []
+#         for f in c_f.links(c):
+#             for nb in f_c.links(f):
+#                 if nb == c:
+#                     continue
+#                 if not include_ghosts and nb >= n_local:
+#                     continue
+#                 nbrs.append(int(nb))
+#         # METIS expects neighbors as a Python list (duplicates ok)
+#         adj.append(nbrs)
+
+#     # Partition
+#     _, membership = pymetis.part_graph(num_partitions, adjacency=adj)
+
+#     # Group cells
+#     parts = [[] for _ in range(num_partitions)]
+#     for lc, part_id in zip(local_cells, membership):
+#         if lc < n_local:  # keep owned only
+#             parts[part_id].append(int(lc))
+
+#     # (METIS sometimes assigns two distant islands to the same part)
+#     def split_connected(component_cells):
+#         # BFS on the induced subgraph
+#         cell_set = set(component_cells)
+#         visited = set()
+#         comps = []
+#         for c in component_cells:
+#             if c in visited:
+#                 continue
+#             q = [c]
+#             visited.add(c)
+#             cur = []
+#             while q:
+#                 u = q.pop()
+#                 cur.append(u)
+#                 for v in adj[u]:
+#                     if v in cell_set and v not in visited:
+#                         visited.add(v)
+#                         q.append(v)
+#             comps.append(cur)
+#         return comps
+
+#     refined = []
+#     for p in parts:
+#         if not p:
+#             continue
+#         comps = split_connected(p)
+#         refined.extend(comps)
+
+#     # If splitting made more than num_partitions partitions, you can merge tiny components
+#     # into neighboring larger ones as a post-process. Often not necessary.
+
+#     # Sort indices inside each partition
+#     # refined = [sorted(comp) for comp in refined if len(comp) > 0]
+#     return refined
 
 
 def precompute_gradients(solutions, mesh, element_indices):
@@ -299,12 +269,9 @@ def find_inclusion_elements(
                 )
 
                 for i in range(N):
-                    for j in range(i, N):
+                    for j in range(N):
                         grad_dot = np.dot(gradients[i][elem], gradients[j][elem])
                         Dfrechet[i, j] -= const * grad_dot * area
-
-                        if i != j:
-                            Dfrechet[j, i] = Dfrechet[i, j]
 
             check = Dfrechet - ntd_AD + ntd_A0
             check = (check + check.T) / 2  # ensure symmetry
@@ -328,3 +295,68 @@ def find_inclusion_elements(
         return inclusion_indices, eigenvalue_dict, None
     else:
         return inclusion_indices, eigenvalue_dict, partitions
+
+
+# def find_inclusion_elements(
+#     mesh, solutions_A0, ntd_AD, ntd_A0, sampling_stride=10, const=10
+# ):
+#     """
+#     Find potential inclusion elements by checking the Frechet derivative condition.
+
+#     Parameters:
+#     -----------
+#     mesh : dolfinx.mesh.Mesh
+#         The mesh to search for inclusions
+#     solutions_A0 : list
+#         List of basis solutions from reference solver
+#     ntd_AD : numpy.ndarray
+#         NtD matrix for the perturbed case
+#     ntd_A0 : numpy.ndarray
+#         NtD matrix for the reference case
+#     sampling_stride : int, optional
+#         Stride for sampling elements (default: 10)
+#     const : float, optional
+#         Constant multiplier for the integrand (default: 10)
+
+#     Returns:
+#     --------
+#     inclusion_indexes : list
+#         List of element indices that satisfy the inclusion condition
+#     """
+#     N = len(solutions_A0)
+
+#     # Simple sampling approach - use this instead
+#     num_elements = mesh.topology.index_map(mesh.topology.dim).size_local
+#     sampled_elements = range(0, num_elements, sampling_stride)
+
+#     print(f"Sampling {len(sampled_elements)} elements out of {num_elements} total")
+
+#     inclusion_indexes = []
+#     for idx, elem in enumerate(sampled_elements):
+#         if idx % 10 == 0:
+#             print(f"Processing element {idx}/{len(sampled_elements)}")
+
+#         ct = dolfinx.mesh.meshtags(
+#             mesh,
+#             mesh.topology.dim,
+#             np.array([elem], dtype=np.int32),
+#             np.array([1], dtype=np.int32),
+#         )
+#         dx_single = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
+
+#         Dfrechet = np.empty((N, N))
+#         for i in range(N):
+#             for j in range(N):
+#                 ui = solutions_A0[i]
+#                 uj = solutions_A0[j]
+#                 integrand = -const * ufl.dot(ufl.grad(ui), ufl.grad(uj))
+#                 Dfrechet[i, j] = dolfinx.fem.assemble_scalar(
+#                     dolfinx.fem.form(integrand * dx_single(1))
+#                 )
+
+#         check = Dfrechet - ntd_AD + ntd_A0
+#         if min(np.linalg.eigvals(check)) > 0:
+#             inclusion_indexes.append(elem)
+
+#     print(f"Found {len(inclusion_indexes)} potential inclusion elements")
+#     return inclusion_indexes

@@ -143,7 +143,7 @@ def plot_ND_map(
     return fig, ax
 
 
-def plot_errors(errors, mesh_sizes=None, labels=None, title="Error Convergence"):
+def plot_errors(errors, mesh_sizes=None, labels=None, title="L² Error Convergence"):
     """
     Plot FEM errors on a semilogy (log-linear) plot.
 
@@ -181,15 +181,9 @@ def plot_errors(errors, mesh_sizes=None, labels=None, title="Error Convergence")
     for i in range(errors.shape[0]):
         label = labels[i] if labels is not None and i < len(labels) else None
         ax.semilogy(mesh_sizes, errors[i], "o-", linewidth=2, markersize=6, label=label)
-        ax.semilogy(
-            mesh_sizes,
-            (np.max(errors) * 1000 * mesh_sizes) ** 2,
-            "k--",
-            label="O(h²)" if i == 0 else None,
-        )
 
     ax.set_xlabel("Mesh size (h)")
-    ax.set_ylabel("Error (log scale)")
+    ax.set_ylabel("Error")
     ax.set_title(title)
     ax.grid(True, which="both", linestyle="--", alpha=0.7)
 
@@ -435,6 +429,8 @@ def plot_test_matrix_eigenvalues(
 
     if sigmoid_scaling is not None:
         all_vals = 1 / (1 + np.exp(-1 * sigmoid_scaling * all_vals))
+    
+    all_vals = np.maximum(0, all_vals)
 
     # Create a mapping from cell index to transformed value
     transformed_dict = dict(zip(cell_indices, all_vals))

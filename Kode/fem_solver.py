@@ -309,23 +309,6 @@ class FemConductivitySolver:
         self.uh.x.array[: len(x_local[0])] = x_local[0]
         self.uh.x.scatter_forward()
 
-    def compute_boundary_norm(self, u_boundary, theta):
-        u_closed = np.append(u_boundary, u_boundary[0])
-        theta_closed = np.append(theta, theta[0] + 2 * np.pi)
-
-        h_segments = np.diff(theta_closed)
-
-        u_i = u_boundary
-        u_i_plus_1 = u_closed[1:]
-
-        integrals_squared = (h_segments / 3) * (
-            u_i**2 + u_i * u_i_plus_1 + u_i_plus_1**2
-        )
-
-        L2_squared_norm = np.sum(integrals_squared)
-
-        return np.sqrt(L2_squared_norm)
-
     def compute_error(self, exact_solution, norm_type="L2"):
         """
         Compute FEM error between u_h and exact_solution.
@@ -340,7 +323,6 @@ class FemConductivitySolver:
             Type of norm to compute:
             - "L2"  : compute the L²(Ω) error
             - "Linf": compute the max-norm (discrete at mesh vertices)
-            - "H1"  : compute the H¹(Ω) error
 
         Returns
         -------
@@ -351,37 +333,19 @@ class FemConductivitySolver:
             raise ValueError("Must solve the problem first")
 
         x = ufl.SpatialCoordinate(self.mesh)
-
-        # 1. Interpolate Exact Solution
-        # Assuming self.V is the function space of the FEM solution (uh)
         u_exact_expr = exact_solution(x[0], x[1])
         u_exact_fun = Function(self.V)
         u_exact_fun.interpolate(
             Expression(u_exact_expr, self.V.element.interpolation_points())
         )
 
-        # 2. Compute difference field (e = uh - u_exact)
+        # Compute difference field
         diff = Function(self.V)
         diff.x.array[:] = self.uh.x.array - u_exact_fun.x.array
 
-        # 3. Choose norm type and assemble
+        # Choose norm type
         if norm_type == "L2":
-            # ||e||_L2 = sqrt( Integral(e^2) )
             error_form = form(ufl.inner(diff, diff) * ufl.dx)
-            error_squared = assemble_scalar(error_form)
-            return float(np.sqrt(error_squared))
-
-        elif norm_type == "H1":
-            # ||e||_H1 = sqrt( Integral(e^2 + |grad(e)|^2) )
-            # The gradient of the difference is ufl.grad(diff)
-            # The magnitude squared of the gradient is ufl.inner(ufl.grad(diff), ufl.grad(diff))
-
-            # Integrand: (e * e) + (grad(e) . grad(e))
-            integrand = ufl.inner(diff, diff) + ufl.inner(
-                ufl.grad(diff), ufl.grad(diff)
-            )
-
-            error_form = form(integrand * ufl.dx)
             error_squared = assemble_scalar(error_form)
             return float(np.sqrt(error_squared))
 
@@ -390,9 +354,22 @@ class FemConductivitySolver:
             return float(np.max(np.abs(diff.x.array)))
 
         else:
-            raise ValueError("norm_type must be 'L2', 'Linf', or 'H1'")
+            raise ValueError("norm_type must be 'L2' or 'Linf'")
 
-    def compute_ntd_map(self, max_freq=None, noise_level=0.0):
+    # def compute_error(self, exact_solution):
+    #     """Compute L2 error against exact solution"""
+    #     if self.uh is None:
+    #         raise ValueError("Must solve the problem first")
+
+    #     x = ufl.SpatialCoordinate(self.mesh)
+    #     u_exact_expr = exact_solution(x[0], x[1])
+    #     diff = self.uh - u_exact_expr
+
+    #     error_form = form(ufl.inner(diff, diff) * ufl.dx)
+    #     error_squared = assemble_scalar(error_form)
+    #     return float(np.sqrt(error_squared))
+
+    def compute_ntd_map(self, max_freq=None):
         """Compute Neumann-to-Dirichlet map with ordering [a_N,...,a₁, b₁,...,b_N]"""
 
         N = len(self.boundary_coords)
@@ -426,14 +403,9 @@ class FemConductivitySolver:
 
             self.assemble_system(neumann_cond=nc_mode)
             self.solve_system()
-
-            # Add noise to solution if desired
-
             self.basis_solutions.append(self.uh.copy())  # Store copy of solution
 
-            coefficients, _ = self.get_boundary_solution_fourier_coefficients(
-                max_freq, noise_level
-            )
+            coefficients, _ = self.get_boundary_solution_fourier_coefficients(max_freq)
             ntd_matrix[:, j] = coefficients
 
         # Sine input modes (next N columns) in forward order
@@ -450,12 +422,10 @@ class FemConductivitySolver:
             self.solve_system()
             self.basis_solutions.append(self.uh.copy())  # Store copy of solution
 
-            coefficients, _ = self.get_boundary_solution_fourier_coefficients(
-                max_freq, noise_level
-            )
+            coefficients, _ = self.get_boundary_solution_fourier_coefficients(max_freq)
             ntd_matrix[:, col_idx] = coefficients
 
-        self.ntd_matrix = 0.5 * (np.real(ntd_matrix) + np.real(ntd_matrix).T)
+        self.ntd_matrix = np.real(ntd_matrix)
         return ntd_matrix, n_values
 
     def cleanup(self):
@@ -739,9 +709,7 @@ class FemConductivitySolver:
 
         return theta_sorted, flux_sorted, coords_sorted
 
-    def get_boundary_solution_fourier_coefficients(
-        self, max_freq=None, noise_level=0.0
-    ):
+    def get_boundary_solution_fourier_coefficients(self, max_freq=None):
         """Compute real Fourier coefficients using FFT in ordering [a_N,...,a₁, b₁,...,b_N]
 
         Returns:
@@ -757,15 +725,6 @@ class FemConductivitySolver:
 
         theta_sorted, u_sorted, coords_sorted = self.get_ordered_boundary_solution()
         N = len(u_sorted)
-
-        if noise_level > 0.0:
-            noise = np.random.normal(loc=0.0, scale=1.0, size=u_sorted.shape)
-
-            noise_scaling = noise_level / self.compute_boundary_norm(
-                noise, theta_sorted
-            )
-
-            u_sorted = u_sorted + noise_scaling * noise
 
         if max_freq is None:
             max_freq = N // 2
