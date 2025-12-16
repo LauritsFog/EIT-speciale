@@ -2,13 +2,10 @@
 
 from fem_solver import FemConductivitySolver
 import matplotlib.pyplot as plt
-import ufl
 from plotting_functions import (
     plot_conductivity_components,
-    plot_highlighted_elements,
     plot_highlighted_elements_with_inclusions,
     plot_test_matrix_eigenvalues,
-    plot_mesh_partitions,
 )
 from inner_reconstruction_method import (
     find_inclusion_elements,
