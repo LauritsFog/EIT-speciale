@@ -9,6 +9,7 @@ from dolfinx.fem import (
     functionspace,
     assemble_scalar,
     form,
+    create_interpolation_data
 )
 import ufl
 from dolfinx.io import gmshio
@@ -439,8 +440,8 @@ class FemConductivitySolver:
         if self.ksp is not None:
             self.ksp.destroy()
 
-    def plot_solution(self, title="FEM solution u"):
-        if self.uh is None:
+    def plot_solution(self, solution = None, title="FEM solution u"):
+        if self.uh is None and solution is None:
             raise ValueError("No solution to plot")
 
         # Create figure and axis
@@ -453,7 +454,10 @@ class FemConductivitySolver:
 
         x = coords[:, 0]
         y = coords[:, 1]
-        u_vals = self.uh.x.array.real
+        if solution is None:
+            u_vals = self.uh.x.array.real
+        else:
+            u_vals = solution.x.array.real
 
         triang = tri.Triangulation(x, y, cells)
 
@@ -778,3 +782,48 @@ class FemConductivitySolver:
             "converged": self.ksp.getConvergedReason(),
             "residual": self.ksp.getResidualNorm(),
         }
+    
+def interpolate_solutions_to_new_mesh(solver0, solver):
+    """
+    Interpolate a list of FEM solutions from one mesh to another.
+    
+    Parameters
+    ----------
+    solver0 : FemConductivitySolver
+        The original solver containing the basis solutions on the old mesh.
+    solver : FemConductivitySolver
+        The new solver with the new mesh to interpolate solutions onto.
+    Returns
+    -------
+    new_basis_solutions : list of dolfinx.fem.Function
+        List of solutions interpolated to the new mesh.
+    """
+    
+    new_basis_solutions = []
+
+    # Get ALL cells from the target mesh
+    tdim = solver.mesh.topology.dim
+    num_cells = solver.mesh.topology.index_map(tdim).size_local
+    cells = np.arange(num_cells, dtype=np.int32)
+
+    interpolation_data = create_interpolation_data(
+            V_to=solver.V, V_from=solver0.V, cells = cells
+        )
+    
+    for i, basis_solution in enumerate(solver0.basis_solutions):
+        # Create new function on new mesh
+        new_solution = Function(solver.V)
+
+        # Interpolate from old mesh to new mesh
+        new_solution.interpolate_nonmatching(
+            basis_solution,  
+            cells,           
+            interpolation_data  
+        )
+        
+        new_basis_solutions.append(new_solution)
+        
+        print(f"Interpolated basis solution {i+1}/{len(solver0.basis_solutions)}")
+    
+    return new_basis_solutions
+

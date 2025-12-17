@@ -1,13 +1,16 @@
 # %% Imports and initialization
-from fem_solver import FemConductivitySolver
+from fem_solver import (
+    FemConductivitySolver,
+    interpolate_solutions_to_new_mesh)
 import matplotlib.pyplot as plt
 import ufl
-from inner_reconstruction_method import find_inclusion_elements
+from inner_reconstruction_method import (
+    find_inclusion_elements)
 from plotting_functions import *
 from conductivity_functions import *
 # %%
 
-characteristic_length = 0.05
+characteristic_length = 0.01
 num_partitions = None
 
 max_freq = 15
@@ -58,19 +61,31 @@ c = c - c_tol
 alpha = alpha - alpha_tol
 beta = beta + beta_tol
 
-const = 0.8/5#c * (alpha**2) / (beta**2)
+const = c * (alpha**2) / (beta**2)
 
 ntd_A0 = solverA0.ntd_matrix
 ntd_AD = solverAD.ntd_matrix
 
+#%% new mesh
+recon_characteristic_length = 0.05
+mesh_solver = FemConductivitySolver(mesh_characteristic_length=recon_characteristic_length)
+recon_mesh = mesh_solver.mesh
+
+sols = interpolate_solutions_to_new_mesh(
+    solverA0,
+    mesh_solver)
+
+mesh_solver.set_conductivity(my_conductivity_AD, my_conductivity_A0)
+
+
 #%%
 # Tolerance in the inclusion test: min(eigenvalues) + tol > 0
 mu = 0.99
-tol = -mu*np.min(np.real(np.linalg.eigvals(ntd_A0-ntd_AD)))
+tol = 0.000001#-mu*np.min(np.real(np.linalg.eigvals(ntd_A0-ntd_AD)))
 
 inclusion_indexes, test_matrix_eigenvalues, partitions = find_inclusion_elements(
-    mesh=mesh,
-    solutions_A0=solverA0.basis_solutions,
+    mesh=recon_mesh,
+    solutions_A0=sols,
     ntd_AD=ntd_AD,
     ntd_A0=ntd_A0,
     num_partitions=num_partitions,
@@ -79,10 +94,10 @@ inclusion_indexes, test_matrix_eigenvalues, partitions = find_inclusion_elements
 )
 
 #%%
-plot_highlighted_elements_with_inclusions(mesh, inclusion_indexes, solverAD.cell_tags)
+plot_highlighted_elements_with_inclusions(recon_mesh, inclusion_indexes, mesh_solver.cell_tags)
 
 plot_test_matrix_eigenvalues(
-    mesh, test_matrix_eigenvalues, sigmoid_scaling=None
+    recon_mesh, test_matrix_eigenvalues, sigmoid_scaling=None
 )
 
 # plot_mesh_partitions(mesh, partitions)
@@ -90,4 +105,7 @@ plot_test_matrix_eigenvalues(
 plt.show()
 
 
+# %%
+solverA0.plot_solution(solution = solverA0.basis_solutions[2])
+mesh_solver.plot_solution(solution = sols[2])
 # %%
