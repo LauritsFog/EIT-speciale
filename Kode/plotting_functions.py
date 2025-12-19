@@ -198,6 +198,8 @@ def plot_conductivity_components(
     conductivity_func,
     title="Conductivity Tensor s",
     n_points=500,
+    cmap="viridis",
+    isotropic=False
 ):
     """
      Plot the conductivity tensor components (a11, a12, a22)
@@ -239,23 +241,16 @@ def plot_conductivity_components(
                 a22_grid[i, j] = a22
 
     # Plot setup
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    components = [
-        (a11_grid, r"$a_{11}$", "viridis"),
-        (a12_grid, r"$a_{12}$", "viridis"),
-        (a22_grid, r"$a_{22}$", "viridis"),
-    ]
-
-    for ax, (grid, label, cmap) in zip(axes, components):
+    if isotropic:  # isotropic case
+        fig, ax = plt.subplots(1, 1, figsize=(6, 6))
         im = ax.imshow(
-            grid,
+            a11_grid,
             extent=[-domain_radius, domain_radius, -domain_radius, domain_radius],
             origin="lower",
             cmap=cmap,
             aspect="equal",
         )
-        # ax.contour(X, Y, grid, levels=50, colors="white", linewidths=0.5, alpha=0.7)
-        ax.set_title(f"{label}")
+        ax.set_title("Target", fontsize=14)
         ax.set_xlabel("x")
         ax.set_ylabel("y")
         ax.add_patch(
@@ -268,10 +263,42 @@ def plot_conductivity_components(
                 linewidth=1,
             )
         )
-        plt.colorbar(im, ax=ax, label=label)
+        plt.colorbar(im, ax=ax, label="Conductivity")
+        axes = ax
+    else: # anisotropic case
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+        components = [
+            (a11_grid, r"$a_{11}$", cmap),
+            (a12_grid, r"$a_{12}$", cmap),
+            (a22_grid, r"$a_{22}$", cmap),
+        ]
 
-    fig.suptitle(f"{title}", fontsize=16)
-    plt.tight_layout()
+        for ax, (grid, label, cmap) in zip(axes, components):
+            im = ax.imshow(
+                grid,
+                extent=[-domain_radius, domain_radius, -domain_radius, domain_radius],
+                origin="lower",
+                cmap=cmap,
+                aspect="equal",
+            )
+            # ax.contour(X, Y, grid, levels=50, colors="white", linewidths=0.5, alpha=0.7)
+            ax.set_title(f"{label}")
+            ax.set_xlabel("x")
+            ax.set_ylabel("y")
+            ax.add_patch(
+                plt.Circle(
+                    (0, 0),
+                    domain_radius,
+                    fill=False,
+                    color="black",
+                    linestyle="-",
+                    linewidth=1,
+                )
+            )
+            plt.colorbar(im, ax=ax, label=label)
+
+        fig.suptitle(f"{title}", fontsize=16)
+        plt.tight_layout()
     return fig, axes
 
 
@@ -329,7 +356,10 @@ def plot_highlighted_elements_with_inclusions(
 
     # Color inclusion cells
     if cell_tags is not None:
-        inclusion_cells = np.where(cell_tags.values == 1)[0]
+        if isinstance(cell_tags, np.ndarray):
+            inclusion_cells = cell_tags
+        else:
+            inclusion_cells = np.where(cell_tags.values == 1)[0]
         for c in inclusion_cells:
             cell_vertices = connectivity.links(int(c))
             poly = plt.Polygon(
@@ -424,13 +454,15 @@ def plot_highlighted_elements(mesh, element_indices, inclusions=None):
 def plot_test_matrix_eigenvalues(
     mesh, eigenvalue_dict, sigmoid_scaling=None, title="Min eigenvalue per element"
 ):
-    all_vals = np.array(list(eigenvalue_dict.values()), dtype=float)
-    cell_indices = np.array(list(eigenvalue_dict.keys()))
+    if isinstance(eigenvalue_dict, np.ndarray):
+        all_vals = eigenvalue_dict
+        cell_indices = np.arange(len(eigenvalue_dict))
+    else:
+        all_vals = np.array(list(eigenvalue_dict.values()), dtype=float)
+        cell_indices = np.array(list(eigenvalue_dict.keys()))
 
     if sigmoid_scaling is not None:
         all_vals = 1 / (1 + np.exp(-1 * sigmoid_scaling * all_vals))
-    
-    all_vals = np.maximum(0, all_vals)
 
     # Create a mapping from cell index to transformed value
     transformed_dict = dict(zip(cell_indices, all_vals))
@@ -474,3 +506,78 @@ def plot_test_matrix_eigenvalues(
     plt.ylabel("y")
 
     return fig, ax
+
+def plot_highlighted_eigenvalues(mesh, element_indices, eigenvalue_dict):
+    """
+     Plot 2D mesh with highlighted elements using matplotlib
+
+     Parameters:
+    --------
+     mesh : dolfinx.mesh.Mesh
+         The mesh
+     element_indices : list or int
+         List of element indices to highlight, or single index
+    """
+    # Convert single index to list for uniform handling
+    if isinstance(element_indices, int):
+        element_indices = [element_indices]
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # Plot the entire mesh
+    topology = mesh.topology
+    tdim = topology.dim
+    cells = topology.connectivity(tdim, 0).array.reshape(-1, tdim + 1)
+    vertices = mesh.geometry.x
+
+    # Plot all cells (background mesh)
+    for cell in cells:
+        poly = plt.Polygon(
+            vertices[cell][:, :2], fill=None, edgecolor="gray", alpha=0.3, linewidth=0.2
+        )
+        ax.add_patch(poly)
+
+    if isinstance(eigenvalue_dict, np.ndarray):
+        vals = eigenvalue_dict
+    else:
+        vals = np.array(list(eigenvalue_dict.values()), dtype=float)
+        I = np.argsort(np.array(list(eigenvalue_dict.keys())))
+        vals = vals[I]
+    vmin, vmax = np.min(vals[element_indices]), np.max(vals[element_indices])
+    cmap = plt.cm.viridis
+
+    # Highlight the specified elements in red
+    for element_index in element_indices:
+        if element_index < len(cells):
+            highlight_cell = cells[element_index]
+            value = vals[element_index]
+            norm_value = (value - vmin) / (vmax - vmin) if vmax > vmin else 0.5
+            color = cmap(norm_value)
+            poly_highlight = plt.Polygon(
+                vertices[highlight_cell][:, :2], fill=True, color=color, alpha=1
+            )
+            ax.add_patch(poly_highlight)
+        else:
+            print(
+                f"Warning: Element index {element_index} out of range (0-{len(cells) - 1})"
+            )
+    
+    # add colorbar
+    sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=plt.Normalize(vmin=vmin, vmax=vmax))
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=ax, shrink=0.8)
+    cbar.set_label("Eigenvalue", rotation=270, labelpad=15)
+
+    # Set plot properties
+    ax.set_aspect("equal")
+    ax.autoscale_view()
+
+    #title = f"Mesh with {len(element_indices)} highlighted elements"
+    if len(element_indices) == 1:
+        title = f"Mesh with highlighted element {element_indices[0]}"
+    #plt.title(title)
+    plt.xlabel("x")
+    plt.ylabel("y")
+
+    return fig, ax
+
