@@ -1,15 +1,85 @@
 # %%
-
+import dolfinx.mesh
+from dolfinx.geometry import BoundingBoxTree, compute_colliding_cells
 from fem_solver import FemConductivitySolver
 import matplotlib.pyplot as plt
 import numpy as np
 import ufl
-from plotting_functions import plot_conductivity_components, plot_errors, plot_ND_map
+from plotting_functions import (
+    plot_conductivity_components,
+    plot_errors,
+    plot_ND_map,
+    plot_test_matrix_eigenvalues,
+)
 from conductivity_functions import (
     conductivity_AD,
 )
 from inner_reconstruction_method import add_noise
+from inner_reconstruction_method import (
+    find_inclusion_elements,
+)
+from scipy.optimize import curve_fit
+
+
 # %%
+
+
+def sample_radial_eigenvalues(
+    mesh,
+    frechet_eigenvalue_map,
+    direction=(1.0, 0.0),
+):
+    tdim = mesh.topology.dim
+    num_elements = mesh.topology.index_map(tdim).size_local
+    connectivity = mesh.topology.connectivity(tdim, 0)
+    x = mesh.geometry.x
+
+    all_centroids = np.zeros((num_elements, 2))
+
+    # 1. Compute Centroids
+    for i in range(num_elements):
+        vertex_indices = connectivity.links(i)
+        vertex_coords = x[vertex_indices][:, :2]
+        all_centroids[i] = np.mean(vertex_coords, axis=0)
+
+    # 2. Define the line vector (normalized)
+    u = np.array(direction)
+    u = u / np.linalg.norm(u)
+
+    # 3. Calculate perpendicular distance of every centroid to the line
+    # For a line through origin with unit direction u, distance d = |c - (c·u)u|
+    # Or using 2D cross product: d = |x*uy - y*ux|
+    dist_to_line = np.abs(all_centroids[:, 0] * u[1] - all_centroids[:, 1] * u[0])
+
+    # Calculate projection length along the line (radial distance)
+    r_projections = all_centroids[:, 0] * u[0] + all_centroids[:, 1] * u[1]
+
+    # 4. Selection Logic:
+    # We pick elements whose centroids are very close to the line.
+    # To handle varying mesh density, we use a tolerance related to the average mesh size
+    # or a small fraction of the radius.
+    line_tolerance = 0.02  # Adjust this: 2% of the radius
+
+    # Also ensure the projection is positive (going in the right direction)
+    mask = (dist_to_line < line_tolerance) & (r_projections >= -0.01)
+
+    indices_on_line = np.where(mask)[0]
+
+    # 5. Sort by projection length (r)
+    r_selected = r_projections[indices_on_line]
+    sort_indices = np.argsort(r_selected)
+    sorted_element_indices = indices_on_line[sort_indices]
+
+    # 6. Extract values
+    radial_distance = []
+    frechet_eigenvalues_raw = []
+
+    for idx in sorted_element_indices:
+        if idx in frechet_eigenvalue_map:
+            radial_distance.append(r_projections[idx])
+            frechet_eigenvalues_raw.append(frechet_eigenvalue_map[idx])
+
+    return np.array(radial_distance), np.array(frechet_eigenvalues_raw)
 
 
 def get_sine_eigenvalues(ND_matrix, max_freq):
@@ -26,7 +96,7 @@ def get_sine_eigenvalues(ND_matrix, max_freq):
     return np.array(ND_eigenvals)
 
 
-def polar_to_euclidean(polar_conductivities, x, y):
+def polar_to_euclidean(AD_conductivity, x, y):
     """
     Convert a diagonal polar conductivity tensor diag(a_r, a_theta)
     into its Cartesian (x, y) coordinate form, automatically computing theta.
@@ -45,7 +115,7 @@ def polar_to_euclidean(polar_conductivities, x, y):
     A : Euclidean conducitivity tensor components (Axx, Axy, Ayy)
     """
 
-    a_r, a_theta = polar_conductivities
+    a_r, a_theta = AD_conductivity
 
     # Compute polar angle
     theta = np.arctan2(y, x)
@@ -194,7 +264,7 @@ def exact_solution(x, y, n, radii, coeffs, ks):
 
 ## Configuration
 
-characteristic_length = 0.03
+characteristic_length = 0.02
 
 c_tol = 0
 alpha_tol = 0
@@ -210,36 +280,27 @@ shape_choice = "two_ellipses"
 shape_params = (0, 0, r1, r1, 0, 0, r2, r2)
 
 # Each layer given in polar coordinates (a_r, a_theta)
-polar_conductivities = [
-    (1.0, 1.0),  # 0 <= r < r1, layer 3
-    (1.0, 1.0),  # r1 <= r < r2, layer 2
+
+AD_conductivity = [
+    (8.0, 8.0),  # 0 <= r < r1, layer 3
+    (4.0, 4.0),  # r1 <= r < r2, layer 2
     (1.0, 1.0),  # r2 <= r <= 1, layer 1
 ]
 
-# polar_conductivities = [
-#     (0.3, 5),  # 0 <= r < r1, layer 3
-#     (1.5, 0.6),  # r1 <= r < r2, layer 2
-#     (0.1, 0.1),  # r2 <= r <= 1, layer 1
-# ]
-
 # Anisotropy factors κ_j = sqrt(a_theta^(j) / a_r^(j))
 ks = [
-    np.sqrt(polar_conductivities[0][1] / polar_conductivities[0][0]),  # Layer 3
-    np.sqrt(polar_conductivities[1][1] / polar_conductivities[1][0]),  # Layer 2
-    np.sqrt(polar_conductivities[2][1] / polar_conductivities[2][0]),  # Layer 1
+    np.sqrt(AD_conductivity[0][1] / AD_conductivity[0][0]),  # Layer 3
+    np.sqrt(AD_conductivity[1][1] / AD_conductivity[1][0]),  # Layer 2
+    np.sqrt(AD_conductivity[2][1] / AD_conductivity[2][0]),  # Layer 1
 ]
 
 print("Anisotropy factors k_j: ")
 print(ks)
 
 # Check inner most layer (layer 3) first.
-my_conductivity_A0 = lambda x, y: polar_to_euclidean(polar_conductivities[2], x, y)
-inclusion_conductivity_1 = lambda x, y: polar_to_euclidean(
-    polar_conductivities[0], x, y
-)
-inclusion_conductivity_2 = lambda x, y: polar_to_euclidean(
-    polar_conductivities[1], x, y
-)
+my_conductivity_A0 = lambda x, y: polar_to_euclidean(AD_conductivity[2], x, y)
+inclusion_conductivity_1 = lambda x, y: polar_to_euclidean(AD_conductivity[0], x, y)
+inclusion_conductivity_2 = lambda x, y: polar_to_euclidean(AD_conductivity[1], x, y)
 
 
 def my_conductivity_AD(x, y):
@@ -253,7 +314,7 @@ def my_conductivity_AD(x, y):
     )
 
 
-coeffs = compute_solution_coefficients(r1, r2, n, polar_conductivities)
+coeffs = compute_solution_coefficients(r1, r2, n, AD_conductivity)
 print("Solution coefficients: ")
 print(coeffs[0])
 print(coeffs[1])
@@ -266,68 +327,111 @@ fig, axes = plot_conductivity_components(
     my_conductivity_AD, title=f"{shape_choice} Conductivity Distribution"
 )
 
-solverAD = FemConductivitySolver(mesh_characteristic_length=characteristic_length)
+solver_A0 = FemConductivitySolver(mesh_characteristic_length=characteristic_length)
+solver_A0.set_conductivity(my_conductivity_A0, my_conductivity_A0)
 
-max_freq = 30
+mesh = solver_A0.mesh
 
-c, alpha, beta = solverAD.set_conductivity(my_conductivity_AD, my_conductivity_A0)
+solver_AD = FemConductivitySolver(mesh=mesh)
+c, alpha, beta = solver_AD.set_conductivity(my_conductivity_AD, my_conductivity_A0)
 
-fig_components, axes_components = solverAD.plot_conductivity_components()
+max_freq = 5
+
+const = c * (alpha**2) / (beta**2)
+
+fig_components, axes_components = solver_AD.plot_conductivity_components()
 
 ## Solve with example Neumann condition
 
-x = ufl.SpatialCoordinate(solverAD.get_mesh())
+# x = ufl.SpatialCoordinate(solver_AD.get_mesh())
 
-nc = ufl.cos(n * ufl.atan2(x[1], x[0]))  # Neumann condition (flux) on boundary
+# nc = ufl.cos(n * ufl.atan2(x[1], x[0]))  # Neumann condition (flux) on boundary
 
-# Re-assemble only the RHS with new flux
-solverAD.assemble_system(neumann_cond=nc)
-uAD = solverAD.solve_system()
-
-
-def u_exact(x, y):
-    return exact_solution(x, y, n, [r1, r2], coeffs, ks)
+# # Re-assemble only the RHS with new flux
+# solver_AD.assemble_system(neumann_cond=nc)
+# uAD = solver_AD.solve_system()
 
 
-L2_error = solverAD.compute_error(u_exact, norm_type="L2")
+# def u_exact(x, y):
+#     return exact_solution(x, y, n, [r1, r2], coeffs, ks)
 
-print(f"L2 error of u_h: {L2_error}")
 
-solverAD.plot_solution("FEM solution")
-solverAD.plot_exact_solution(u_exact, "Exact solution")
+# # solver_AD.plot_solution("FEM solution")
+# solver_AD.plot_exact_solution(u_exact, "Exact solution")
 
 # Plot entire boundary
-solverAD.plot_boundary_solution_with_neumann_cond(
-    "Solution $u_f^A$ on boundary with Neumann condition"
-)
-
-solverAD.cleanup()
+# solver_AD.plot_boundary_solution_with_neumann_cond(
+#     "Solution $u_f^A$ on boundary with Neumann condition"
+# )
 
 ## Investigate eiganvalues
 
-noise_level = 0.01
+noise_level = 0.0
 
-# ntd_AD, n_freqs = solverAD.compute_ntd_map(max_freq=max_freq)
-# ND_fem_eigenvals = np.diag(ntd_AD[max_freq:, max_freq:])
+ntd_AD, n_freqs = solver_AD.compute_ntd_map(max_freq=max_freq)
+ND_fem_eigenvals = np.diag(ntd_AD[max_freq:, max_freq:])
 
 # ntd_AD_post_noise = add_noise(ntd_AD, noise_level)
 # ND_fem_eigenvals = get_sine_eigenvalues(ntd_AD_post_noise, max_freq)
 
-ntd_AD_pre_noise, _ = solverAD.compute_ntd_map(
-    max_freq=max_freq, noise_level=noise_level
+# ntd_AD_pre_noise, _ = solver_AD.compute_ntd_map(max_freq=max_freq, noise_level=noise_level)
+# ND_fem_eigenvals = get_sine_eigenvalues(ntd_AD_pre_noise, max_freq)
+
+ntd_A0, n_freqs = solver_A0.compute_ntd_map(max_freq=max_freq)
+
+inclusion_indexes, test_matrix_eigenvalues, frechet_eigenvalues = (
+    find_inclusion_elements(
+        mesh=mesh,
+        solutions_A0=solver_A0.basis_solutions,
+        ntd_AD=ntd_AD,
+        ntd_A0=ntd_A0,
+        num_partitions=None,
+        const=const,
+        tol=0,
+    )
 )
-ND_fem_eigenvals = get_sine_eigenvalues(ntd_AD_pre_noise, max_freq)
 
-# %%
+radial_dist, frechet_norm = sample_radial_eigenvalues(
+    mesh,
+    frechet_eigenvalues,
+    direction=(1.0, 0.0),  # Sample along the positive x-axis
+)
 
-# plot_ND_map(ntd_AD, n_freqs)
+k = max(ks)
+C = np.max(np.abs(frechet_norm)) / np.max(
+    np.min(np.abs(frechet_norm)) + np.abs(radial_dist) ** (k * max_freq)
+)
+
+radial_decay = C * np.abs(radial_dist) ** (4 * k * max_freq - 4) + np.min(
+    np.abs(frechet_norm)
+)
+
+print(np.min(np.abs(frechet_norm)))
+
+fig, ax = plt.subplots()
+ax.plot(radial_dist, np.abs(frechet_norm), "r-", label="Numerical eigenvalues")
+ax.plot(
+    radial_dist,
+    radial_decay,
+    "k--",
+    label="O($r^{kN}$) + $\epsilon$",
+)
+ax.set_xlabel("Radial Distance from Center")
+ax.set_ylabel("Minimum absolute Frechet Eigenvalue")
+ax.legend()
+ax.set_title("Frechet Eigenvalues along Radius")
+ax.grid(True)
+
+plt.savefig("Frechet_norm_radial_decay.pdf")
+
+plot_test_matrix_eigenvalues(mesh, frechet_eigenvalues)
 
 ND_exact_eigenvals = []
 
 sine_modes = np.arange(1, max_freq + 1)
 
 for n in sine_modes:
-    coeffs = compute_solution_coefficients(r1, r2, n, polar_conductivities)
+    coeffs = compute_solution_coefficients(r1, r2, n, AD_conductivity)
     (alpha1, beta1), (alpha2, beta2), (alpha3, beta3) = coeffs
 
     ND_exact_eigenvals.append(alpha3 + beta3)
@@ -341,7 +445,7 @@ ax.stem(
     basefmt=" ",
     linefmt="C0-",
     markerfmt="C0o",
-    label="ND Exact Eigenvals",
+    label="Exact eigenvaluess",
 )
 ax.stem(
     sine_modes,
@@ -349,41 +453,22 @@ ax.stem(
     linefmt="C1--",
     markerfmt="C1x",
     basefmt=" ",
-    label="Numerical Eigenvals",
+    label="Numerical eigenvaluess",
 )
 ax.plot(
     sine_modes,
     decay_rate,
-    color="C2",
-    linestyle="-",
+    "k--",
     label="O($1/n$)",
 )
 ax.set_title("Exact and numerical eigenvalues of the ND map")
-ax.set_xlabel("Eigenvalue Index $n$")
-ax.set_ylabel("Eigenvalue Magnitude $\\lambda_n$ (Log Scale)")
+ax.set_xlabel("Eigenvalue index $n$")
+ax.set_ylabel("Eigenvalue magnitude (Log Scale)")
 ax.grid(True, which="both", ls="--")
 ax.legend()
 plt.yscale("log")
-plt.savefig("ND_eigenvalue_decay.pdf")
-
-eigenval_errors = np.abs(ND_exact_eigenvals - ND_fem_eigenvals) / np.abs(
-    ND_exact_eigenvals
-)
-
-fig, ax = plt.subplots(1, 1, figsize=(10, 5))
-ax.stem(
-    sine_modes,
-    eigenval_errors,
-    basefmt=" ",
-    linefmt="C0-",
-    markerfmt="C0o",
-    label="Eigenvalue relative errors",
-)
-ax.set_title("Relative errors between exact and numerical ND map eigenvalues")
-ax.set_xlabel("Eigenvalue Index $n$")
-ax.set_ylabel("Relative error (Log Scale)")
-ax.grid(True, which="both", ls="--")
-ax.legend()
-plt.yscale("log")
+# plt.savefig("ND_eigenvalue_decay.pdf")
 
 plt.show()
+
+# %%

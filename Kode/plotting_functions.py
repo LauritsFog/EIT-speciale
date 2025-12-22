@@ -428,7 +428,7 @@ def plot_highlighted_elements(mesh, element_indices, inclusions=None):
 
 
 def plot_test_matrix_eigenvalues(
-    mesh, eigenvalue_dict, sigmoid_scaling=None, title="Min eigenvalue per element"
+    mesh, eigenvalue_dict, sigmoid_scaling=None, title="Smallest eigenvalue per element"
 ):
     all_vals = np.array(list(eigenvalue_dict.values()), dtype=float)
     cell_indices = np.array(list(eigenvalue_dict.keys()))

@@ -10,7 +10,9 @@ from conductivity_functions import (
     conductivity_AD,
 )
 from inner_reconstruction_method import add_noise
-
+from inner_reconstruction_method import (
+    find_inclusion_elements,
+)
 # %%
 
 
@@ -206,17 +208,17 @@ shape_choice = "two_ellipses"
 shape_params = (0, 0, r1, r1, 0, 0, r2, r2)
 
 # Each layer given in polar coordinates (a_r, a_theta)
-polar_conductivities = [
-    (1.0, 1.0),  # 0 <= r < r1, layer 3
-    (1.0, 1.0),  # r1 <= r < r2, layer 2
-    (1.0, 1.0),  # r2 <= r <= 1, layer 1
-]
-
 # polar_conductivities = [
-#     (16.0, 8.0),  # 0 <= r < r1, layer 3
-#     (2.0, 4.0),  # r1 <= r < r2, layer 2
+#     (1.0, 1.0),  # 0 <= r < r1, layer 3
+#     (1.0, 1.0),  # r1 <= r < r2, layer 2
 #     (1.0, 1.0),  # r2 <= r <= 1, layer 1
 # ]
+
+polar_conductivities = [
+    (8.0, 8.0),  # 0 <= r < r1, layer 3
+    (4.0, 4.0),  # r1 <= r < r2, layer 2
+    (1.0, 2.0),  # r2 <= r <= 1, layer 1
+]
 
 # Anisotropy factors κ_j = sqrt(a_theta^(j) / a_r^(j))
 ks = [
@@ -262,11 +264,11 @@ def u_exact(x, y):
 
 noise_level = 0.0
 
-max_freq = 20
+max_freq = 5
 
 modes = range(1, max_freq + 1)
 
-characteristic_lengths = [0.1, 0.05, 0.01, 0.005]
+characteristic_lengths = [0.08, 0.04]
 
 errors = np.zeros((len(characteristic_lengths), 1))
 eigenval_errors = np.zeros((max_freq, len(characteristic_lengths)))
@@ -289,14 +291,14 @@ for i, cl in enumerate(characteristic_lengths):
     error = solverAD.compute_error(u_exact, norm_type="H1")
     errors[i] = error
 
-    ND_AD, n_freqs = solverAD.compute_ntd_map(max_freq=max_freq)
+    ntd_AD, n_freqs = solverAD.compute_ntd_map(max_freq=max_freq)
 
     if noise_level > 0:
-        ND_AD = add_noise(ND_AD, noise_level=noise_level)
+        ntd_AD = add_noise(ntd_AD, noise_level=noise_level)
 
-        ND_fem_eigenvals = get_sine_eigenvalues(ND_AD, max_freq)
+        ND_fem_eigenvals = get_sine_eigenvalues(ntd_AD, max_freq)
     else:
-        ND_fem_eigenvals = np.diag(ND_AD[max_freq:, max_freq:])
+        ND_fem_eigenvals = np.diag(ntd_AD[max_freq:, max_freq:])
 
     ND_exact_eigenvals = []
 
@@ -306,15 +308,27 @@ for i, cl in enumerate(characteristic_lengths):
 
         ND_exact_eigenvals.append(alpha3 + beta3)
 
-    eigenval_errors[:, i] = np.abs(ND_exact_eigenvals - ND_fem_eigenvals) / np.abs(
+    eigenval_errors[:, i] = (ND_exact_eigenvals - ND_fem_eigenvals) / np.abs(
         ND_exact_eigenvals
     )
 
     solverAD.cleanup()
 
-# Plot L2 errors
-plot_errors(errors.T, characteristic_lengths, [f"n = {n}"], "$H^1$ Error Convergence")
-plt.savefig("FEM_convergence.pdf")
+# Plot errors
+plot_errors(
+    errors.T, characteristic_lengths, [f"n = {n}"], "FEM solution error convergence"
+)
+# plt.savefig("FEM_convergence.pdf")
+
+min_eigval_errors = np.min(np.abs(eigenval_errors), axis=0)
+
+plot_errors(
+    min_eigval_errors.T,
+    characteristic_lengths,
+    [f"n = {n}"],
+    "Smallest eigenvalue error convergence",
+)
+# plt.savefig("Min_eigval_convergence.pdf")
 
 fig, ax = plt.subplots(1, 1, figsize=(10, 5))
 ax.xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -322,7 +336,7 @@ ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 for i in range(len(characteristic_lengths)):
     ax.semilogy(
         modes,
-        eigenval_errors[:, i],
+        np.abs(eigenval_errors[:, i]),
         "o-",
         linewidth=2,
         markersize=4,
@@ -343,5 +357,25 @@ ax.grid(True, which="both", ls="--")
 ax.legend()
 plt.yscale("log")
 plt.savefig("ND_eigenvalue_relative_error.pdf")
+
+fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+for i in range(len(characteristic_lengths)):
+    ax.plot(
+        modes,
+        eigenval_errors[:, i],
+        "o-",
+        linewidth=2,
+        markersize=4,
+        label=f"Mesh size (h) = {characteristic_lengths[i]}",
+    )
+
+ax.set_title("Signed relative errors between exact and numerical ND map eigenvalues")
+ax.set_xlabel("Eigenvalue Index $n$")
+ax.set_ylabel("Relative error (Log Scale)")
+ax.grid(True, which="both", ls="--")
+ax.legend()
+plt.savefig("ND_eigenvalue_signed_relative_error.pdf")
 
 plt.show()

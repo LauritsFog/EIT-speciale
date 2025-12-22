@@ -248,6 +248,10 @@ def find_inclusion_elements(
     inclusion_indices = []
     min_eig_indices = []
     min_eig_values = []
+    frechet_quantity_values = []
+
+    frechet_mode_sample_idx = 8
+    print(f"Sampling Frechet quantity at mode index {frechet_mode_sample_idx}")
 
     gradients = precompute_gradients(solutions_A0, mesh, list(range(num_elements)))
 
@@ -265,15 +269,23 @@ def find_inclusion_elements(
 
             Dfrechet = np.zeros((N, N))
             for i in range(N):
-                for j in range(N):
+                for j in range(i, N):
                     grad_dot = np.dot(gradients[i][elem], gradients[j][elem])
-                    Dfrechet[i, j] = -const * grad_dot * area
+                    Dfrechet[i, j] -= const * grad_dot * area
+
+                    if i != j:
+                        Dfrechet[j, i] = Dfrechet[i, j]
 
             check = Dfrechet - ntd_AD + ntd_A0
             check = (check + check.T) / 2  # ensure symmetry
             min_eig = np.min(np.real(np.linalg.eigvals(check)))
+            # frechet_quantity = np.linalg.norm(Dfrechet, ord="fro")
+            # frechet_quantity = np.min(np.abs(np.diag(Dfrechet)))
+            idx = round(N / 2 + frechet_mode_sample_idx)
+            frechet_quantity = np.abs(Dfrechet[idx, idx])
 
             min_eig_values.append(min_eig)
+            frechet_quantity_values.append(frechet_quantity)
             min_eig_indices.append(elem)
             if min_eig + tol > 0:
                 inclusion_indices.append(elem)
@@ -309,22 +321,39 @@ def find_inclusion_elements(
             check = Dfrechet - ntd_AD + ntd_A0
             check = (check + check.T) / 2  # ensure symmetry
             min_eig = np.min(np.real(np.linalg.eigvals(check)))
+            # frechet_quantity = np.linalg.norm(Dfrechet, ord="fro")
+            # frechet_quantity = np.min(np.abs(np.diag(Dfrechet)))
+            idx = round(N / 2 + frechet_mode_sample_idx)
+            frechet_quantity = np.abs(Dfrechet[idx, idx])
+
             is_inclusion = min_eig + tol > 0
 
             # Assign the same partition-level min_eig to every cell in the partition
             for elem in part:
                 min_eig_values.append(min_eig)
+                frechet_quantity_values.append(frechet_quantity)
                 min_eig_indices.append(elem)
                 if is_inclusion:
                     inclusion_indices.append(elem)
 
     min_eig_values = np.asarray(min_eig_values, dtype=float)
-    eigenvalue_dict = dict(zip(min_eig_indices, min_eig_values))
+    frechet_quantity_values = np.asarray(frechet_quantity_values, dtype=float)
 
     print(
         f"Found {len(inclusion_indices)} potential inclusion elements across all partitions"
     )
-    if num_partitions is None:
-        return inclusion_indices, eigenvalue_dict, None
-    else:
-        return inclusion_indices, eigenvalue_dict, partitions
+
+    eigenvalue_dict = dict(zip(min_eig_indices, min_eig_values))
+    frechet_eigenvalue_dict = dict(zip(min_eig_indices, frechet_quantity_values))
+
+    return inclusion_indices, eigenvalue_dict, frechet_eigenvalue_dict
+
+    # if num_partitions is None:
+    #     eigenvalue_dict = dict(zip(min_eig_indices, min_eig_values))
+    #     frechet_eigenvalue_dict = dict(zip(min_eig_indices, frechet_quantity_values))
+
+    #     return inclusion_indices, eigenvalue_dict, frechet_eigenvalue_dict
+    # else:
+    #     eigenvalue_dict = dict(zip(min_eig_indices, min_eig_values))
+
+    #     return inclusion_indices, eigenvalue_dict, partitions
