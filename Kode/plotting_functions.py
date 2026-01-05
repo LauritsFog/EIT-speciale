@@ -357,7 +357,7 @@ def plot_highlighted_elements_with_inclusions(
     return fig, ax
 
 
-def plot_highlighted_elements(mesh, element_indices, inclusions=None):
+def plot_highlighted_elements(mesh, element_indices, inclusions=None, color="red", alpha = 0.7):
     """
      Plot 2D mesh with highlighted elements using matplotlib
 
@@ -372,7 +372,7 @@ def plot_highlighted_elements(mesh, element_indices, inclusions=None):
     if isinstance(element_indices, int):
         element_indices = [element_indices]
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(6,6))
 
     # Plot the entire mesh
     topology = mesh.topology
@@ -383,7 +383,9 @@ def plot_highlighted_elements(mesh, element_indices, inclusions=None):
     # Plot all cells (background mesh)
     for cell in cells:
         poly = plt.Polygon(
-            vertices[cell][:, :2], fill=None, edgecolor="black", alpha=0.3
+            vertices[cell][:, :2], fill=None, 
+            edgecolor="black", alpha=0.3,
+            linewidth = 0.4
         )
         ax.add_patch(poly)
 
@@ -392,7 +394,9 @@ def plot_highlighted_elements(mesh, element_indices, inclusions=None):
         if element_index < len(cells):
             highlight_cell = cells[element_index]
             poly_highlight = plt.Polygon(
-                vertices[highlight_cell][:, :2], fill=True, color="red", alpha=0.7
+                vertices[highlight_cell][:, :2], fill=True, 
+                color=color, alpha=alpha,
+                linewidth=0
             )
             ax.add_patch(poly_highlight)
         else:
@@ -478,3 +482,82 @@ def plot_test_matrix_eigenvalues(
     plt.ylabel("y")
 
     return fig, ax
+
+def plot_highlighted_eigenvalues(mesh, element_indices, eigenvalue_dict):
+    """
+     Plot 2D mesh with highlighted elements using matplotlib
+
+     Parameters:
+    --------
+     mesh : dolfinx.mesh.Mesh
+         The mesh
+     element_indices : list or int
+         List of element indices to highlight, or single index
+    """
+    # Convert single index to list for uniform handling
+    if isinstance(element_indices, int):
+        element_indices = [element_indices]
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+
+    # Plot the entire mesh
+    topology = mesh.topology
+    tdim = topology.dim
+    cells = topology.connectivity(tdim, 0).array.reshape(-1, tdim + 1)
+    vertices = mesh.geometry.x
+
+    # Plot all cells (background mesh)
+    for cell in cells:
+        poly = plt.Polygon(
+            vertices[cell][:, :2], fill=None, edgecolor="gray", alpha=0.3, linewidth=0.2
+        )
+        ax.add_patch(poly)
+
+    if isinstance(eigenvalue_dict, np.ndarray):
+        vals = eigenvalue_dict
+    else:
+        vals = np.array(list(eigenvalue_dict.values()), dtype=float)
+        I = np.argsort(np.array(list(eigenvalue_dict.keys())))
+        vals = vals[I]
+    vmin, vmax = np.min(vals[element_indices]), np.max(vals[element_indices])
+    cmap = plt.cm.viridis
+
+    # Highlight the specified elements in red
+    for element_index in element_indices:
+        if element_index < len(cells):
+            highlight_cell = cells[element_index]
+            value = vals[element_index]
+            norm_value = (value - vmin) / (vmax - vmin) if vmax > vmin else 0.5
+            color = cmap(norm_value)
+            poly_highlight = plt.Polygon(
+                vertices[highlight_cell][:, :2], fill=True, color=color, alpha=1
+            )
+            ax.add_patch(poly_highlight)
+        else:
+            print(
+                f"Warning: Element index {element_index} out of range (0-{len(cells) - 1})"
+            )
+    
+    # add colorbar
+    sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=plt.Normalize(vmin=vmin, vmax=vmax))
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=ax)
+    cbar.set_label("Eigenvalue", rotation=270, labelpad=15)
+
+    # Set plot properties
+    ax.set_aspect("equal")
+    ax.autoscale_view()
+
+    # set axis limits
+    ax.set_xlim(-1,1)
+    ax.set_ylim(-1,1)
+
+    #title = f"Mesh with {len(element_indices)} highlighted elements"
+    if len(element_indices) == 1:
+        title = f"Mesh with highlighted element {element_indices[0]}"
+    #plt.title(title)
+    plt.xlabel("x")
+    plt.ylabel("y")
+
+    return fig, ax
+

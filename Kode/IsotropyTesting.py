@@ -54,15 +54,15 @@ mesh = solverA0.mesh
 # Computing the "optimal" alpha, beta, c constants from checking the conductivity on each element
 solverAD = FemConductivitySolver(mesh=mesh)
 c, alpha, beta = solverAD.set_conductivity(my_conductivity_AD, my_conductivity_A0)
-
-solverA0.compute_ntd_map(max_freq=max_freq)
-solverAD.compute_ntd_map(max_freq=max_freq)
-
 c = c - c_tol
 alpha = alpha - alpha_tol
 beta = beta + beta_tol
 
 const = c * (alpha**2) / (beta**2)
+
+#%%
+solverA0.compute_ntd_map(max_freq=max_freq)
+solverAD.compute_ntd_map(max_freq=max_freq)
 
 ntd_A0 = solverA0.ntd_matrix
 ntd_AD = solverAD.ntd_matrix
@@ -81,9 +81,11 @@ mesh_solver.set_conductivity(my_conductivity_AD, my_conductivity_A0)
 
 #%%
 # Tolerance in the inclusion test: min(eigenvalues) + tol > 0
-mu = 0.99
-tol = 0#-mu*np.min(np.real(np.linalg.eigvals(ntd_A0-ntd_AD)))
-
+mu = 0.97
+M = ntd_A0-ntd_AD
+Msym = 0.5*(M + M.T)
+tol =0.01# -mu*np.min(np.real(np.linalg.eigvals(Msym)))
+const_garde = 0.8
 inclusion_indexes, test_matrix_eigenvalues, partitions = find_inclusion_elements(
     mesh=recon_mesh,
     solutions_A0=sols,
@@ -100,8 +102,8 @@ plot_highlighted_elements_with_inclusions(recon_mesh, inclusion_indexes, mesh_so
 fig, ax = plot_highlighted_eigenvalues(recon_mesh, inclusion_indexes, test_matrix_eigenvalues)
 # plot_mesh_partitions(mesh, partitions)
 #fig.savefig("isotropic_reconstruction.pdf", bbox_inches="tight")
+#fig.savefig("isotropic_reconstruction_w_iso_probing.pdf", bbox_inches="tight")
 
 plt.show()
-
 
 # %%
