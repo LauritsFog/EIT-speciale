@@ -1,22 +1,21 @@
 # %%
 
-from fem_solver import FemConductivitySolver
+from fem_solver import FemConductivitySolver, interpolate_solutions_to_new_mesh
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import numpy as np
 import ufl
 from plotting_functions import (
     plot_conductivity_components,
-    plot_errors,
-    plot_ND_map,
-    plot_test_matrix_eigenvalues,
 )
 from conductivity_functions import (
     conductivity_AD,
 )
-from inner_reconstruction_method import add_noise
 from inner_reconstruction_method import (
-    find_inclusion_elements,
+    compute_reconstruction_test_values,
+    reconstruct_inclusions,
+    add_noise,
+    precompute_gradients,
 )
 
 
@@ -293,7 +292,7 @@ def exact_solution(x, y, n, radii, coeffs_AD, ks):
     return u_expr
 
 
-### Configuration
+### Conductivity
 
 # Define geometry
 r1, r2 = 0.3, 0.7
@@ -335,7 +334,7 @@ ks_A0 = [
 
 k = ks_A0[2]  # Outer layer anisotropy
 
-# Setings
+### Setings
 
 noise_level = 0.0
 
@@ -345,9 +344,13 @@ modes = range(1, max_freq + 1)
 # Eigenmode frequency
 n = 3
 
-h_array = [0.06, 0.04, 0.02, 0.01, 0.005]
+h_array = [0.06, 0.04, 0.02]  # , 0.01, 0.005]
 h_array = np.array(h_array)
 num_partitions = None
+
+recon_h = 0.061
+recon_solver = FemConductivitySolver(mesh_characteristic_length=recon_h)
+recon_mesh = recon_solver.mesh
 
 eigenvalue_error_scaling = (h_array[0] * np.array(modes)) ** 2
 
@@ -388,9 +391,7 @@ coeffs_AD = compute_solution_coefficients(r1, r2, n, polar_conductivities_AD)
 coeffs_A0 = compute_solution_coefficients(r1, r2, n, polar_conductivities_A0)
 
 # Visualization
-fig, axes = plot_conductivity_components(
-    my_conductivity_AD, title=f"{shape_choice} Conductivity Distribution"
-)
+fig, axes = plot_conductivity_components(my_conductivity_AD, title="")
 plt.savefig("Conductivity_distribution_analytic_example.pdf")
 
 
@@ -480,26 +481,27 @@ for i, cl in enumerate(h_array):
         ntd_exact_eigenvalues_A0 - ntd_fem_eigenvalues_A0
     ) / np.abs(ntd_exact_eigenvalues_A0)
 
-    inclusion_indexes, test_matrix_eigenvalues, frechet_quantity = (
-        find_inclusion_elements(
-            mesh=mesh,
-            solutions_A0=solver_A0.basis_solutions,
-            ntd_AD=ntd_AD,
-            ntd_A0=ntd_A0,
-            num_partitions=num_partitions,
-            const=const,
-            tol=0,
-        )
+    recon_basis_solutions = interpolate_solutions_to_new_mesh(solver_A0, recon_solver)
+
+    gradients = precompute_gradients(recon_basis_solutions, recon_mesh)
+
+    # Call the function directly
+    eigenvalue_dict, frechet_quantity_dict = compute_reconstruction_test_values(
+        mesh=recon_mesh,
+        gradients=gradients,
+        ntd_AD=ntd_AD,
+        ntd_A0=ntd_A0,
+        rho=const,
     )
 
-    radial_dist, frechet_norm = sample_radial_eigenvalues(
-        mesh,
-        frechet_quantity,
+    radial_dist, frechet_quantity = sample_radial_eigenvalues(
+        recon_mesh,
+        frechet_quantity_dict.values(),
         direction=(1.0, 0.0),  # Sample along the positive x-axis
     )
 
     radial_dist_lists.append(radial_dist)
-    frechet_quantity_lists.append(frechet_norm)
+    frechet_quantity_lists.append(frechet_quantity)
 
     solver_AD.cleanup()
     solver_A0.cleanup()
@@ -516,7 +518,7 @@ ax.semilogy(
     "o-",
     linewidth=2,
     markersize=6,
-    label="$u^{A_D}$",
+    label="$u_h^{A_D}$",
 )
 ax.semilogy(
     h_array,
@@ -524,19 +526,19 @@ ax.semilogy(
     "o-",
     linewidth=2,
     markersize=6,
-    label="$u^{A_0}$",
+    label="$u_h^{A_0}$",
 )
 ax.semilogy(
     h_array,
     (c_AD * 2 * h_array) ** (k_AD),
     "k--",
-    label=f"O($h^{{{round(k_AD, 2)}}}$)",
+    label=f"O($h^{{{round(k_AD, 1)}}}$)",
 )
 ax.semilogy(
     h_array,
     (c_A0 * 5 * h_array) ** (k_A0),
     "k:",
-    label=f"O($h^{{{round(k_A0, 2)}}}$)",
+    label=f"O($h^{{{round(k_A0, 1)}}}$)",
 )
 ax.set_xlabel("Mesh size (h)")
 ax.set_ylabel("$H^1$-error (log scale)")
@@ -559,7 +561,7 @@ ax.semilogy(
     "o-",
     linewidth=2,
     markersize=6,
-    label="$u^{A_D}$",
+    label="$u_h^{A_D}$",
 )
 ax.semilogy(
     h_array,
@@ -567,19 +569,19 @@ ax.semilogy(
     "o-",
     linewidth=2,
     markersize=6,
-    label="$u^{A_0}$",
+    label="$u_h^{A_0}$",
 )
 ax.semilogy(
     h_array,
     (c_AD * 5 * h_array) ** (k_AD),
     "k--",
-    label=f"O($h^{{{round(k_AD, 2)}}}$)",
+    label=f"O($h^{{{round(k_AD, 1)}}}$)",
 )
 ax.semilogy(
     h_array,
     (c_A0 * 10 * h_array) ** (k_A0),
     "k:",
-    label=f"O($h^{{{round(k_A0, 2)}}}$)",
+    label=f"O($h^{{{round(k_A0, 1)}}}$)",
 )
 ax.set_xlabel("Mesh size (h)")
 ax.set_ylabel("Absolute error (log scale)")
@@ -612,7 +614,7 @@ ax.semilogy(
     "k--",
     linewidth=2,
     markersize=4,
-    label=f"O($n^{{{round(k_AD, 2)}}}$)",
+    label=f"O($n^{{{round(k_AD, 1)}}}$)",
 )
 ax.set_xlabel("Eigenvalue index ($n$)")
 ax.set_ylabel("Absolute relative error (Log Scale)")
@@ -644,7 +646,7 @@ ax.semilogy(
     "k--",
     linewidth=2,
     markersize=4,
-    label=f"O($n^{{{round(k_A0, 2)}}}$)",
+    label=f"O($n^{{{round(k_A0, 1)}}}$)",
 )
 ax.set_xlabel("Eigenvalue index ($n$)")
 ax.set_ylabel("Absolute relative error (Log Scale)")
@@ -716,8 +718,6 @@ ax.legend()
 plt.savefig("ND_eigenvalue_decay_AD.pdf")
 
 ### Plot Frechet eigenvalues along radial line for the finest mesh
-
-C = 0.1 * np.min(np.abs(frechet_quantity_lists[-1])) / np.min(radial_frechet_decay)
 
 fig, ax = plt.subplots(1, 1, figsize=(6, 4))
 for i in range(len(h_array)):

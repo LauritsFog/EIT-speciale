@@ -1,3 +1,6 @@
+import numpy as np
+
+
 def is_inside_ellipse(x, y, center, axes):
     """Check if (x, y) is inside an ellipse defined by (center, semi-axes)."""
     x0, y0 = center
@@ -35,7 +38,6 @@ def is_inside_L_shape(x, y, params):
 
     return True
 
-import numpy as np
 
 def is_inside_isotropy_test(x, y):
     """
@@ -43,22 +45,18 @@ def is_inside_isotropy_test(x, y):
     Works with scalars or numpy arrays.
     """
     angle = np.pi / 4  # 45 degrees
-    rot = np.array([
-        [np.cos(angle), -np.sin(angle)], 
-        [np.sin(angle), np.cos(angle)]])  # 45 degrees rotation
+    rot = np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )  # 45 degrees rotation
 
     point = np.array([x, y])
     rotated_point = rot @ point
-    X,Y = rotated_point[0], rotated_point[1]
+    X, Y = rotated_point[0], rotated_point[1]
 
-    in_long = (X<2/11) & (X>0) & (np.abs(Y)<1/2)
-    in_short = (Y>(1/2-2/11)) & (Y<1/2) & (X>0) & (X<1/2)
+    in_long = (X < 2 / 11) & (X > 0) & (np.abs(Y) < 1 / 2)
+    in_short = (Y > (1 / 2 - 2 / 11)) & (Y < 1 / 2) & (X > 0) & (X < 1 / 2)
 
-    return (in_long | in_short)
-
-
-
-# ---------- Main conductivity definition ----------
+    return in_long | in_short
 
 
 def conductivity_AD(x, y, background_func, inclusion_funcs, shape_choice, shape_params):
@@ -101,7 +99,7 @@ def conductivity_AD(x, y, background_func, inclusion_funcs, shape_choice, shape_
             return inclusion_funcs(x, y)
         else:
             return background_func(x, y)
-    
+
     elif shape_choice == "isotropy_test":
         if is_inside_isotropy_test(x, y):
             return inclusion_funcs(x, y)
