@@ -117,11 +117,11 @@ inclusion_indexes_2, test_matrix_eigenvalues_2, partitions_2 = find_inclusion_el
 
 # %%
 plot_highlighted_eigenvalues(recon_mesh, inclusion_indexes, test_matrix_eigenvalues)
-
+#plt.savefig("horizontal_reconstruction.pdf", bbox_inches="tight")
 plt.show()
 
 plot_highlighted_eigenvalues(recon_mesh, inclusion_indexes_2, test_matrix_eigenvalues_2)
-
+#plt.savefig("vertical_reconstruction.pdf", bbox_inches="tight")
 plt.show()
 
 plot_highlighted_elements_with_inclusions(recon_mesh, inclusion_indexes, np.array(inclusion_indexes_2))
@@ -144,8 +144,143 @@ plot_highlighted_elements_with_inclusions(recon_mesh, didx)
 plt.show()
 
 # %%
+fig, ax = plot_highlighted_elements(recon_mesh, didx, color="black", alpha=0.7)
+ax.set_title("")
+#plt.savefig("binary_difference.pdf", bbox_inches="tight")
+plt.show()
+
+# %%
 plot_test_matrix_eigenvalues(
     recon_mesh, ev_diff, sigmoid_scaling=None)
 
 plt.show()
 # %% #######################
+# conductivity plots
+from matplotlib.patches import Circle, Ellipse
+
+# ----------------------------
+# Ellipse definition
+# ----------------------------
+center = params[0]      # (x0, y0)
+axes = params[1]        # semi-axes (a, b)
+
+# Arrow ratio (vx, vy)
+arrow_ratio = (2, 5)
+
+# ----------------------------
+# Create figure and axis
+# ----------------------------
+fig, ax = plt.subplots(figsize=(6, 6))
+ax.set_aspect("equal")
+
+# ----------------------------
+# Unit circle (domain)
+# ----------------------------
+unit_circle = Circle(
+    (0.0, 0.0),
+    radius=1.0,
+    fill=False,
+    linewidth=1
+)
+ax.add_patch(unit_circle)
+
+# ----------------------------
+# Filled ellipse
+# ----------------------------
+ellipse = Ellipse(
+    xy=center,
+    width=2 * axes[0],     # full width = 2a
+    height=2 * axes[1],    # full height = 2b
+    alpha=0.4,
+    color='grey'
+)
+
+# ----------------------------
+# Ellipse outline (line)
+# ----------------------------
+ellipse_line = Ellipse(
+    xy=center,
+    width=2 * axes[0],
+    height=2 * axes[1],
+    fill=False,
+    linewidth=1
+)
+
+# Clip ellipse to unit circle
+ellipse.set_clip_path(unit_circle)
+ax.add_patch(ellipse)
+ax.add_patch(ellipse_line)
+
+# ----------------------------
+# Compute arrow scaling
+# ----------------------------
+vx, vy = arrow_ratio
+a, b = axes
+
+scale = min(a / abs(vx), b / abs(vy))*0.9
+
+dx = scale * vx
+dy = scale * vy
+
+x0, y0 = center
+
+def draw_xy_arrows(ax, x0, y0, vx, vy, scale,
+                   head_width=0.03,
+                   label_offset=0.02):
+
+    dx = scale * vx
+    dy = scale * vy
+
+    # X-direction arrow
+    ax.arrow(
+        x0, y0, dx, 0,
+        head_width=head_width,
+        length_includes_head=True,
+        color='black',
+        linewidth=0.5
+    )
+
+    # Y-direction arrow
+    ax.arrow(
+        x0, y0, 0, dy,
+        head_width=head_width,
+        length_includes_head=True,
+        color='black',
+        linewidth=0.5
+    )
+
+    # X-arrow label
+    ax.text(
+        x0 + dx * 0.55,
+        y0 - label_offset,
+        f"{vx}",
+        ha="right",
+        va="top"
+    )
+
+    # Y-arrow label
+    ax.text(
+        x0 - label_offset * 1.5,
+        y0 + dy * 0.55,
+        f"{vy}",
+        ha="right",
+        va="top"
+    )
+
+draw_xy_arrows(ax, x0, y0, vx, vy, scale)
+draw_xy_arrows(ax, -x0, y0, 1, 1, 2*scale)
+
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+# ----------------------------
+# Plot settings
+# ----------------------------
+ax.set_xlim(-1.1, 1.1)
+ax.set_ylim(-1.1, 1.1)
+plt.savefig("vertical_conductivity.pdf", bbox_inches="tight")
+#plt.savefig("horizontal_conductivity.pdf", bbox_inches="tight")
+
+plt.show()
+
+
+# %%
