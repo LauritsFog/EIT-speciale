@@ -344,9 +344,8 @@ modes = range(1, max_freq + 1)
 # Eigenmode frequency
 n = 3
 
-h_array = [0.06, 0.04, 0.02]  # , 0.01, 0.005]
+h_array = [0.06]  # , 0.04, 0.02, 0.01, 0.005]
 h_array = np.array(h_array)
-num_partitions = None
 
 recon_h = 0.061
 recon_solver = FemConductivitySolver(mesh_characteristic_length=recon_h)
@@ -357,10 +356,6 @@ eigenvalue_error_scaling = (h_array[0] * np.array(modes)) ** 2
 # Frechet quantity decay (must be smaller that max_freq)
 frechet_diag_mode = 8
 r = np.linspace(0, 1, 100)
-
-# radial_frechet_decay = (h_array[-1] ** 2) * (
-#     np.abs(r) ** (2 * k - 2)
-# ) + (h_array[-1] ** 2) * (np.abs(r) ** (2 * k * max_freq - 2))
 
 radial_frechet_decay = (h_array[-1] ** 2) * (
     np.abs(r) ** (k * 2 * frechet_diag_mode - 2)
@@ -499,6 +494,8 @@ for i, cl in enumerate(h_array):
         frechet_quantity_dict.values(),
         direction=(1.0, 0.0),  # Sample along the positive x-axis
     )
+
+    print(frechet_quantity)
 
     radial_dist_lists.append(radial_dist)
     frechet_quantity_lists.append(frechet_quantity)
