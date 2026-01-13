@@ -4,10 +4,10 @@ from fem_solver import (
     interpolate_solutions_to_new_mesh)
 import matplotlib.pyplot as plt
 import ufl
-from inner_reconstruction_method import (
-    find_inclusion_elements)
+from inner_reconstruction_method import *
 from plotting_functions import *
 from conductivity_functions import *
+from reconstruction_method_2 import *
 # %%
 
 characteristic_length = 0.005
@@ -38,9 +38,9 @@ def my_conductivity_AD(x, y):
     )
 
 # Visualization
-fig, axes = plot_conductivity_components(
-    my_conductivity_AD, cmap = 'binary',isotropic=True)
-plt.show()
+#fig, axes = plot_conductivity_components(
+#   my_conductivity_AD, cmap = 'binary', isotropic=True)
+#plt.show()
 
 #fig.savefig("isotropic_target.pdf", bbox_inches="tight")
 #%%
@@ -79,31 +79,79 @@ sols = interpolate_solutions_to_new_mesh(
 mesh_solver.set_conductivity(my_conductivity_AD, my_conductivity_A0)
 
 
+
 #%%
 # Tolerance in the inclusion test: min(eigenvalues) + tol > 0
 mu = 0.97
 M = ntd_A0-ntd_AD
 Msym = 0.5*(M + M.T)
-tol =0.01# -mu*np.min(np.real(np.linalg.eigvals(Msym)))
+tol = 0
 const_garde = 0.8
-inclusion_indexes, test_matrix_eigenvalues, partitions = find_inclusion_elements(
-    mesh=recon_mesh,
-    solutions_A0=sols,
-    ntd_AD=ntd_AD,
-    ntd_A0=ntd_A0,
-    num_partitions=num_partitions,
-    const=const,
-    tol=tol,
+
+gradients = precompute_gradients(sols, recon_mesh)
+#%%
+ev_dict, fr_dict = compute_reconstruction_test_values(
+    recon_mesh,
+    gradients,
+    ntd_AD,
+    ntd_A0,
+    const
 )
+inclusion_indexes = reconstruct_inclusions(ev_dict, tol)
+
 
 #%%
 plot_highlighted_elements_with_inclusions(recon_mesh, inclusion_indexes, mesh_solver.cell_tags)
 
-fig, ax = plot_highlighted_eigenvalues(recon_mesh, inclusion_indexes, test_matrix_eigenvalues)
+fig, ax = plot_highlighted_eigenvalues(recon_mesh, inclusion_indexes, ev_dict)
 # plot_mesh_partitions(mesh, partitions)
 #fig.savefig("isotropic_reconstruction.pdf", bbox_inches="tight")
 #fig.savefig("isotropic_reconstruction_w_iso_probing.pdf", bbox_inches="tight")
 
 plt.show()
+
+# %% 
+#%% ####################
+np.random.seed(8)
+noiselevel = 0#1e-4
+ntd_AD_noisy = add_noise(ntd_AD, noiselevel)
+M = ntd_A0-ntd_AD_noisy
+Msym = 0.5*(M + M.T)
+# %%
+mu = 1.0001
+tol = -mu * np.min(np.real(np.linalg.eigvals(Msym)))
+print("Regularisation:", tol)
+# %%
+gradients = precompute_gradients(sols, recon_mesh)
+
+#%%
+ev_dict, fr_dict = compute_reconstruction_test_values(
+    recon_mesh,
+    gradients,
+    ntd_AD_noisy,
+    ntd_A0,
+    const
+)
+inclusion_indexes = reconstruct_inclusions(ev_dict, tol)
+# %%
+plot_highlighted_elements_with_inclusions(recon_mesh, inclusion_indexes, mesh_solver.cell_tags)
+fig, ax = plot_highlighted_eigenvalues(recon_mesh, inclusion_indexes, ev_dict)
+# %% ###### METHOD 2 ##########
+rho0 = 0.1
+rho_step = 0.25
+mu2 = 0#1.001
+alpha = -mu2 * np.min(np.real(np.linalg.eigvals(Msym)))
+inclusion_counter = reconstruction2(
+    recon_mesh,
+    gradients,
+    ntd_AD_noisy,
+    ntd_A0,
+    alpha,
+    rho0,
+    rho_step,
+    max_it = 1000
+)
+# %%
+fig, ax = plot_method_2(recon_mesh, inclusion_counter)
 
 # %%
