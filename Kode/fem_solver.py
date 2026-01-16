@@ -762,6 +762,12 @@ class FemConductivitySolver:
 
         return coefficients, n_values
 
+    def get_target_inclusion_indeces(self):
+        tags_object = self.cell_tags
+        target_inclusion = np.where(tags_object.values == 1)[0]
+
+        return target_inclusion
+
     def get_solution(self):
         """Return the solution function"""
         return self.uh

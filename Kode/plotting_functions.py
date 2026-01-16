@@ -1,73 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-
-
-def plot_mesh_partitions(
-    mesh, partitions, title="Mesh partitions", alpha=0.5, cmap_name="gist_ncar"
-):
-    """
-    Plot 2D mesh partitions with distinct colors (supports up to hundreds of partitions).
-
-    Parameters
-    ----------
-    mesh : dolfinx.mesh.Mesh
-        The mesh to visualize.
-    partitions : list[list[int]]
-        List of partitions, each containing cell indices.
-    title : str, optional
-        Plot title.
-    alpha : float, optional
-        Transparency of partition colors (0–1).
-    cmap_name : str, optional
-        Name of Matplotlib colormap (e.g. 'gist_ncar', 'nipy_spectral', 'turbo').
-        Should be continuous to support many distinct colors.
-    """
-    topology = mesh.topology
-    tdim = topology.dim
-
-    # Ensure cell->vertex connectivity
-    if topology.connectivity(tdim, 0) is None:
-        topology.create_connectivity(tdim, 0)
-    connectivity = topology.connectivity(tdim, 0)
-    vertices = mesh.geometry.x
-
-    num_cells = mesh.topology.index_map(tdim).size_local
-    num_partitions = len(partitions)
-
-    # Get a continuous colormap, then sample it at evenly spaced intervals
-    base_cmap = plt.get_cmap(cmap_name)
-    random_vals = np.random.rand(num_partitions)
-    colors = base_cmap(random_vals)
-
-    fig, ax = plt.subplots(figsize=(10, 8))
-
-    # Plot each partition with a unique color
-    for p_idx, part in enumerate(partitions):
-        if not part:
-            continue
-        color = colors[p_idx]
-        for elem in part:
-            if 0 <= elem < num_cells:
-                cell_vertices = connectivity.links(elem)
-                poly = plt.Polygon(
-                    vertices[cell_vertices][:, :2],
-                    fill=True,
-                    facecolor=color,
-                    alpha=alpha,
-                    edgecolor="black",
-                    linewidth=0.1,
-                )
-                ax.add_patch(poly)
-
-    # Final formatting
-    ax.set_aspect("equal")
-    ax.autoscale_view()
-    plt.xlabel("x")
-    plt.ylabel("y")
-    plt.title(f"{title} ({num_partitions} partitions)")
-    plt.tight_layout()
-
-    return fig, ax
+import matplotlib.ticker as ticker
 
 
 def plot_ND_map(
@@ -202,7 +135,7 @@ def plot_errors(errors, mesh_sizes=None, labels=None, title="Error Convergence")
 
 def plot_conductivity_components(
     conductivity_func,
-    title="Conductivity Tensor s",
+    title="Conductivity Tensors",
     n_points=500,
 ):
     """
@@ -281,83 +214,9 @@ def plot_conductivity_components(
     return fig, axes
 
 
-def plot_highlighted_elements_with_inclusions(
-    mesh, element_indices=None, cell_tags=None
+def plot_highlighted_elements(
+    mesh, element_indices, inclusions=None, color="red", alpha=0.7
 ):
-    """
-    Plot 2D mesh with highlighted elements and optionally color inclusion regions.
-    """
-    if element_indices is None:
-        element_indices = []
-    elif isinstance(element_indices, int):
-        element_indices = [element_indices]
-
-    fig, ax = plt.subplots(figsize=(10, 8))
-    topology = mesh.topology
-    tdim = topology.dim
-
-    # Ensure connectivity
-    if topology.connectivity(tdim, 0) is None:
-        topology.create_connectivity(tdim, 0)
-
-    connectivity = topology.connectivity(tdim, 0)
-    vertices = mesh.geometry.x
-
-    num_cells = mesh.topology.index_map(tdim).size_local
-
-    # Plot all cells
-    for cell_index in range(num_cells):
-        cell_vertices = connectivity.links(cell_index)
-        poly = plt.Polygon(
-            vertices[cell_vertices][:, :2],
-            fill=None,
-            edgecolor="gray",
-            alpha=0.1,
-            linewidth=0.4,
-        )
-        ax.add_patch(poly)
-
-    # Highlight elements
-    for cell_index in element_indices:
-        if 0 <= cell_index < num_cells:
-            cell_vertices = connectivity.links(cell_index)
-            poly = plt.Polygon(
-                vertices[cell_vertices][:, :2],
-                fill=True,
-                color="red",
-                alpha=0.4,
-                edgecolor="black",
-                linewidth=0,
-            )
-            ax.add_patch(poly)
-        else:
-            print(f"Element index {cell_index} out of range (0-{num_cells - 1})")
-
-    # Color inclusion cells
-    if cell_tags is not None:
-        inclusion_cells = np.where(cell_tags.values == 1)[0]
-        for c in inclusion_cells:
-            cell_vertices = connectivity.links(int(c))
-            poly = plt.Polygon(
-                vertices[cell_vertices][:, :2],
-                fill=True,
-                color="blue",
-                alpha=0.4,
-                edgecolor="black",
-                linewidth=0,
-            )
-            ax.add_patch(poly)
-
-    ax.set_aspect("equal")
-    ax.autoscale_view()
-    plt.xlabel("x")
-    plt.ylabel("y")
-    plt.title("Mesh with highlighted inclusions")
-
-    return fig, ax
-
-
-def plot_highlighted_elements(mesh, element_indices, inclusions=None, color="red", alpha = 0.7):
     """
      Plot 2D mesh with highlighted elements using matplotlib
 
@@ -372,7 +231,7 @@ def plot_highlighted_elements(mesh, element_indices, inclusions=None, color="red
     if isinstance(element_indices, int):
         element_indices = [element_indices]
 
-    fig, ax = plt.subplots(figsize=(6,6))
+    fig, ax = plt.subplots(figsize=(6, 6))
 
     # Plot the entire mesh
     topology = mesh.topology
@@ -383,9 +242,11 @@ def plot_highlighted_elements(mesh, element_indices, inclusions=None, color="red
     # Plot all cells (background mesh)
     for cell in cells:
         poly = plt.Polygon(
-            vertices[cell][:, :2], fill=None, 
-            edgecolor="black", alpha=0.3,
-            linewidth = 0.4
+            vertices[cell][:, :2],
+            fill=None,
+            edgecolor="black",
+            alpha=0.3,
+            linewidth=0.4,
         )
         ax.add_patch(poly)
 
@@ -394,9 +255,11 @@ def plot_highlighted_elements(mesh, element_indices, inclusions=None, color="red
         if element_index < len(cells):
             highlight_cell = cells[element_index]
             poly_highlight = plt.Polygon(
-                vertices[highlight_cell][:, :2], fill=True, 
-                color=color, alpha=alpha,
-                linewidth=0
+                vertices[highlight_cell][:, :2],
+                fill=True,
+                color=color,
+                alpha=alpha,
+                linewidth=0,
             )
             ax.add_patch(poly_highlight)
         else:
@@ -408,10 +271,6 @@ def plot_highlighted_elements(mesh, element_indices, inclusions=None, color="red
     ax.set_aspect("equal")
     ax.autoscale_view()
 
-    title = f"Mesh with {len(element_indices)} highlighted elements"
-    if len(element_indices) == 1:
-        title = f"Mesh with highlighted element {element_indices[0]}"
-    plt.title(title)
     plt.xlabel("x")
     plt.ylabel("y")
 
@@ -430,58 +289,6 @@ def plot_highlighted_elements(mesh, element_indices, inclusions=None, color="red
 
     return fig, ax
 
-
-def plot_test_matrix_eigenvalues(
-    mesh, eigenvalue_dict, sigmoid_scaling=None, title="Smallest eigenvalue per element"
-):
-    all_vals = np.array(list(eigenvalue_dict.values()), dtype=float)
-    cell_indices = np.array(list(eigenvalue_dict.keys()))
-
-    if sigmoid_scaling is not None:
-        all_vals = 1 / (1 + np.exp(-1 * sigmoid_scaling * all_vals))
-
-    # Create a mapping from cell index to transformed value
-    transformed_dict = dict(zip(cell_indices, all_vals))
-
-    fig, ax = plt.subplots(figsize=(10, 8))
-    topology = mesh.topology
-    tdim = topology.dim
-    connectivity = topology.connectivity(tdim, 0)
-    vertices = mesh.geometry.x
-
-    vmin, vmax = min(all_vals), max(all_vals)
-    norm = plt.Normalize(vmin, vmax)
-    cmap = plt.cm.viridis
-
-    num_cells = mesh.topology.index_map(tdim).size_local
-    for cell_idx in range(num_cells):
-        cell_vertices = connectivity.links(cell_idx)
-        color = (
-            cmap(norm(transformed_dict[cell_idx]))
-            if cell_idx in transformed_dict
-            else "lightgray"
-        )
-        poly = plt.Polygon(
-            vertices[cell_vertices][:, :2],
-            fill=True,
-            color=color,
-            edgecolor="black",
-            linewidth=0.3,
-        )
-        ax.add_patch(poly)
-
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    cbar = plt.colorbar(sm, ax=ax, shrink=0.8)
-    cbar.set_label("Eigenvalue", rotation=270, labelpad=15)
-
-    ax.set_aspect("equal")
-    ax.autoscale_view()
-    plt.title(title)
-    plt.xlabel("x")
-    plt.ylabel("y")
-
-    return fig, ax
 
 def plot_highlighted_eigenvalues(mesh, element_indices, eigenvalue_dict):
     """
@@ -537,9 +344,11 @@ def plot_highlighted_eigenvalues(mesh, element_indices, eigenvalue_dict):
             print(
                 f"Warning: Element index {element_index} out of range (0-{len(cells) - 1})"
             )
-    
+
     # add colorbar
-    sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=plt.Normalize(vmin=vmin, vmax=vmax))
+    sm = plt.cm.ScalarMappable(
+        cmap=plt.cm.viridis, norm=plt.Normalize(vmin=vmin, vmax=vmax)
+    )
     sm.set_array([])
     cbar = plt.colorbar(sm, ax=ax)
     cbar.set_label("Eigenvalue", rotation=270, labelpad=15)
@@ -549,15 +358,51 @@ def plot_highlighted_eigenvalues(mesh, element_indices, eigenvalue_dict):
     ax.autoscale_view()
 
     # set axis limits
-    ax.set_xlim(-1,1)
-    ax.set_ylim(-1,1)
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
 
-    #title = f"Mesh with {len(element_indices)} highlighted elements"
+    # title = f"Mesh with {len(element_indices)} highlighted elements"
     if len(element_indices) == 1:
         title = f"Mesh with highlighted element {element_indices[0]}"
-    #plt.title(title)
+    # plt.title(title)
     plt.xlabel("x")
     plt.ylabel("y")
 
     return fig, ax
 
+
+def plot_inclusion_reconstruction_error(
+    alphas, reconstruction_measures, alpha_optim=None, alpha_alt=None
+):
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(alphas, reconstruction_measures, "-", linewidth=2, markersize=6)
+
+    if alpha_optim is not None:
+        ax.axvline(
+            x=alpha_optim,
+            color="red",
+            linestyle="--",
+            label=f"Optimal alpha = {alpha_optim:.6e}",
+        )
+        ax.legend()
+
+    if alpha_alt is not None:
+        ax.axvline(
+            x=alpha_alt,
+            color="blue",
+            linestyle="--",
+            label=f"Sub-optimal alpha = {alpha_alt:.6e}",
+        )
+        ax.legend()
+
+    ax.set_xlim(min(alphas), max(alphas))
+    ax.xaxis.set_major_formatter(ticker.FormatStrFormatter("%.6e"))
+    ax.tick_params(axis="x", labelrotation=45)
+
+    ax.set_xlabel("Regularization parameter (alpha)")
+    ax.set_ylabel("Reconstruction error")
+    ax.grid(True, which="both", linestyle="--", alpha=0.7)
+
+    plt.tight_layout()
+
+    return fig, ax
