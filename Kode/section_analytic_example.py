@@ -52,6 +52,7 @@ def estimate_convergence_rate(h_values, error_values):
 
 def sample_radial_eigenvalues(
     mesh,
+    h,
     frechet_eigenvalue_map,
     direction=(1.0, 0.0),
 ):
@@ -83,8 +84,7 @@ def sample_radial_eigenvalues(
     # 4. Selection Logic:
     # We pick elements whose centroids are very close to the line.
     # To handle varying mesh density, we use a tolerance related to the average mesh size
-    # or a small fraction of the radius.
-    line_tolerance = 0.02  # Adjust this: 2% of the radius
+    line_tolerance = h * 0.5
 
     # Also ensure the projection is positive (going in the right direction)
     mask = (dist_to_line < line_tolerance) & (r_projections > 0)
@@ -101,9 +101,9 @@ def sample_radial_eigenvalues(
     frechet_quantity_raw = []
 
     for idx in sorted_element_indices:
-        if idx in frechet_eigenvalue_map:
-            radial_distance.append(r_projections[idx])
-            frechet_quantity_raw.append(frechet_eigenvalue_map[idx])
+        # if idx in frechet_eigenvalue_map:
+        radial_distance.append(r_projections[idx])
+        frechet_quantity_raw.append(frechet_eigenvalue_map[idx])
 
     return np.array(radial_distance), np.array(frechet_quantity_raw)
 
@@ -344,7 +344,7 @@ modes = range(1, max_freq + 1)
 # Eigenmode frequency
 n = 3
 
-h_array = [0.06]  # , 0.04, 0.02, 0.01, 0.005]
+h_array = [0.06, 0.04, 0.02]  # , 0.01, 0.005]
 h_array = np.array(h_array)
 
 recon_h = 0.061
@@ -387,7 +387,7 @@ coeffs_A0 = compute_solution_coefficients(r1, r2, n, polar_conductivities_A0)
 
 # Visualization
 fig, axes = plot_conductivity_components(my_conductivity_AD, title="")
-plt.savefig("Conductivity_distribution_analytic_example.pdf")
+plt.savefig("Figures/Analytic_example/Conductivity_distribution_analytic_example.pdf")
 
 
 def u_exact_AD(x, y):
@@ -491,11 +491,10 @@ for i, cl in enumerate(h_array):
 
     radial_dist, frechet_quantity = sample_radial_eigenvalues(
         recon_mesh,
-        frechet_quantity_dict.values(),
+        recon_h,
+        frechet_quantity_dict,
         direction=(1.0, 0.0),  # Sample along the positive x-axis
     )
-
-    print(frechet_quantity)
 
     radial_dist_lists.append(radial_dist)
     frechet_quantity_lists.append(frechet_quantity)
@@ -541,7 +540,7 @@ ax.set_xlabel("Mesh size (h)")
 ax.set_ylabel("$H^1$-error (log scale)")
 ax.grid(True, which="both", linestyle="--", alpha=0.7)
 ax.legend()
-plt.savefig("FEM_solution_error_convergence.pdf")
+plt.savefig("Figures/Analytic_example/FEM_solution_error_convergence.pdf")
 
 ### Plot smallest eigenvalue errors
 
@@ -584,7 +583,7 @@ ax.set_xlabel("Mesh size (h)")
 ax.set_ylabel("Absolute error (log scale)")
 ax.grid(True, which="both", linestyle="--", alpha=0.7)
 ax.legend()
-plt.savefig("ND_map_smallest_eigenvalue_error_convergence.pdf")
+plt.savefig("Figures/Analytic_example/ND_map_smallest_eigenvalue_error_convergence.pdf")
 
 ### Plot eigenvalue error for each mode
 
@@ -618,7 +617,7 @@ ax.set_ylabel("Absolute relative error (Log Scale)")
 ax.grid(True, which="both", ls="--")
 ax.legend()
 
-plt.savefig("ND_eigenvalue_relative_error_scaling_AD.pdf")
+plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_AD.pdf")
 
 idx_start = 8
 c_A0, k_A0 = estimate_convergence_rate(
@@ -650,7 +649,7 @@ ax.set_ylabel("Absolute relative error (Log Scale)")
 ax.grid(True, which="both", ls="--")
 ax.legend()
 
-plt.savefig("ND_eigenvalue_relative_error_scaling_A0.pdf")
+plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_A0.pdf")
 
 ### Plot signed eigenvalue error for each mode
 
@@ -712,7 +711,7 @@ ax.set_ylabel("Eigenvalue magnitude")
 ax.grid(True, which="both", ls="--")
 ax.legend()
 
-plt.savefig("ND_eigenvalue_decay_AD.pdf")
+plt.savefig("Figures/Analytic_example/ND_eigenvalue_decay_AD.pdf")
 
 ### Plot Frechet eigenvalues along radial line for the finest mesh
 
@@ -735,6 +734,6 @@ ax.set_ylabel("Absolute value of N'th diagonal element (log scale)")
 ax.legend()
 ax.grid(True)
 
-plt.savefig("Frechet_diagonal_radial_decay.pdf")
+plt.savefig("Figures/Analytic_example/Frechet_diagonal_radial_decay.pdf")
 
 plt.show()

@@ -1,7 +1,10 @@
 import numpy as np
+from scipy.spatial.distance import directed_hausdorff
 
 
-def add_noise(ntd_matrix, noise_level):
+def add_noise(ntd_matrix, noise_level, seed=None):
+    np.random.seed(seed)
+
     def H_minus_half_norm(E):
         E_mod = E.copy()
 
@@ -21,7 +24,8 @@ def add_noise(ntd_matrix, noise_level):
 
     noise_matrix = 0.5 * (noise_matrix + noise_matrix.T)
 
-    noise_scaling = noise_level / H_minus_half_norm(noise_matrix)
+    # noise_scaling = noise_level / H_minus_half_norm(noise_matrix)
+    noise_scaling = noise_level / np.linalg.norm(noise_matrix, ord=2)
 
     ntd_matrix_noise = ntd_matrix + noise_scaling * noise_matrix
 
@@ -97,7 +101,7 @@ def compute_reconstruction_test_values(
     num_elements = mesh.topology.index_map(tdim).size_local
 
     N = np.shape(ntd_A0)[0]
-    min_eig_indices = []
+    element_indices = []
     min_eig_values = []
     frechet_quantity_values = []
 
@@ -127,7 +131,7 @@ def compute_reconstruction_test_values(
                 if i != j:
                     Dfrechet[j, i] = Dfrechet[i, j]
 
-        check = rho * Dfrechet - ntd_AD + ntd_A0
+        check = ntd_A0 + rho * Dfrechet - ntd_AD
         check = (check + check.T) / 2  # ensure symmetry
         min_eig = np.min(np.real(np.linalg.eigvals(check)))
 
@@ -136,13 +140,13 @@ def compute_reconstruction_test_values(
 
         min_eig_values.append(min_eig)
         frechet_quantity_values.append(frechet_quantity)
-        min_eig_indices.append(elem)
+        element_indices.append(elem)
 
     min_eig_values = np.asarray(min_eig_values, dtype=float)
     frechet_quantity_values = np.asarray(frechet_quantity_values, dtype=float)
 
-    eigenvalue_dict = dict(zip(min_eig_indices, min_eig_values))
-    frechet_quantity_dict = dict(zip(min_eig_indices, frechet_quantity_values))
+    eigenvalue_dict = dict(zip(element_indices, min_eig_values))
+    frechet_quantity_dict = dict(zip(element_indices, frechet_quantity_values))
 
     return eigenvalue_dict, frechet_quantity_dict
 
@@ -154,6 +158,44 @@ def reconstruct_inclusions(eigenvalue_dict, alpha_reg):
         if min_eig + alpha_reg > 0:
             inclusion_indices.append(elem_idx)
 
-    print(f"Found {len(inclusion_indices)} potential inclusion elements")
-
     return inclusion_indices
+
+
+def compute_hausdorff_distance(mesh, indices_A, indices_B):
+    if len(indices_A) == 0 or len(indices_B) == 0:
+        return np.inf
+
+    tdim = mesh.topology.dim
+    connectivity = mesh.topology.connectivity(tdim, 0)
+
+    def get_vertices(indices):
+        all_vertex_indices = []
+        for i in indices:
+            all_vertex_indices.extend(connectivity.links(i))
+        unique_indices = np.unique(all_vertex_indices)
+        return mesh.geometry.x[unique_indices][:, :tdim]
+
+    points_A = get_vertices(indices_A)
+    points_B = get_vertices(indices_B)
+
+    d_A_B = directed_hausdorff(points_A, points_B)[0]
+    d_B_A = directed_hausdorff(points_B, points_A)[0]
+
+    return max(d_A_B, d_B_A)
+
+
+def compute_classification_error(mesh, target_indeces, recon_inclusion):
+    tdim = mesh.topology.dim
+
+    # Owned cells only
+    num_elements = mesh.topology.index_map(tdim).size_local
+
+    target_set = set(target_indeces)
+    reconstructed_set = set(recon_inclusion)
+
+    false_negatives = len(target_set - reconstructed_set)
+    false_positives = len(reconstructed_set - target_set)
+
+    classification_error = (false_negatives + false_positives) / num_elements
+
+    return classification_error

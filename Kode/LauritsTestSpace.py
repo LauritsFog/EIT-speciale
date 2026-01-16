@@ -4,21 +4,21 @@ from fem_solver import FemConductivitySolver, interpolate_solutions_to_new_mesh
 import matplotlib.pyplot as plt
 from plotting_functions import (
     plot_conductivity_components,
-    plot_highlighted_elements_with_inclusions,
-    plot_test_matrix_eigenvalues,
+    plot_inclusion_reconstruction_error,
+    plot_highlighted_eigenvalues,
 )
 from inner_reconstruction_method import (
     compute_reconstruction_test_values,
     reconstruct_inclusions,
     add_noise,
     precompute_gradients,
+    inclusion_reconstruction_error,
 )
 from conductivity_functions import (
     conductivity_AD,
 )
 import numpy as np
 
-# %%
 
 # AD-A0 >= cI in Loewner order. c = min(EV(AD)) - max(EV(A0)) - c_tol.
 # If c_tol = 0, then AD-A0 = cI in Loewner order.
@@ -87,6 +87,7 @@ solverA0 = FemConductivitySolver(mesh_characteristic_length=characteristic_lengt
 solverA0.set_conductivity(my_conductivity_A0, my_conductivity_A0)
 
 recon_solver = FemConductivitySolver(mesh_characteristic_length=recon_h)
+recon_solver.set_conductivity(my_conductivity_AD, my_conductivity_A0)
 recon_mesh = recon_solver.mesh
 
 mesh = solverA0.mesh
@@ -143,25 +144,30 @@ eigenvalue_dict, frechet_quantity_dict = compute_reconstruction_test_values(
     rho=rho,
 )
 
-mu = 1 + 1e-10
-alpha_reg = mu * np.min(np.real(np.linalg.eigvals(ntd_AD_noise - ntd_A0)))
+inclusion_errors = []
+alpha_regs = []
 
-inclusion_indexes = reconstruct_inclusions(eigenvalue_dict, alpha_reg=alpha_reg)
+mus = np.linspace(1, 1 + 1e-3, 500)
+for mu in mus:
+    alpha_reg = -mu * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
+    alpha_regs.append(alpha_reg)
 
-plot_highlighted_elements_with_inclusions(
-    recon_mesh, inclusion_indexes, solverA0.cell_tags
-)
+    inclusion_indexes = reconstruct_inclusions(eigenvalue_dict, alpha_reg=alpha_reg)
 
-max_test_matrix_eigenvalue = max(eigenvalue_dict.values())
+    inclusion_error = inclusion_reconstruction_error(recon_solver, inclusion_indexes)
 
-test_matrix_eigenvalues_plot = {
-    k: v - max_test_matrix_eigenvalue for k, v in eigenvalue_dict.items()
-}
+    inclusion_errors.append(inclusion_error)
 
-plot_test_matrix_eigenvalues(
-    recon_mesh,
-    test_matrix_eigenvalues_plot,
-    sigmoid_scaling=sigmoid_scaling,
-)
+
+optim_alpha_idx = np.argmin(inclusion_errors)
+optim_alpha = alpha_regs[optim_alpha_idx]
+
+print(f"Optimal mu: {mus[optim_alpha_idx]}")
+
+inclusion_indexes_optim = reconstruct_inclusions(eigenvalue_dict, alpha_reg=optim_alpha)
+
+plot_inclusion_reconstruction_error(alpha_regs, inclusion_errors, optim_alpha)
+
+plot_highlighted_eigenvalues(recon_mesh, inclusion_indexes_optim, eigenvalue_dict)
 
 plt.show()

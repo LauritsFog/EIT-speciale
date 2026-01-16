@@ -1,10 +1,11 @@
 import numpy as np
 
 
-def is_inside_ellipse(x, y, center, axes):
+def is_inside_ellipse(x, y, params):
     """Check if (x, y) is inside an ellipse defined by (center, semi-axes)."""
-    x0, y0 = center
-    a, b = axes
+
+    x0, y0 = params[:2]
+    a, b = params[2:]
     return ((x - x0) ** 2 / a**2 + (y - y0) ** 2 / b**2) <= 1.0
 
 
@@ -19,24 +20,56 @@ def is_inside_two_ellipses(x, y, params):
         return 0
 
 
-def is_inside_L_shape(x, y, params):
+def is_inside_smiley(x, y, params=None):
     """
-    Check if (x, y) lies inside an L-shape centered at origin.
-    params = (outer_size, thickness)
+    Return region ID for smiley face parts:
+    1: Right eye (Ellipse)
+    2: Left eye (Square)
+    3: Mouth (Smiling half-ellipse)
+    0: Background
     """
-    outer, thickness = params
-    half = outer / 2
-    t = thickness
+    # Right eye: Ellipse
+    ellipse_center_x, ellipse_center_y = 0.35, 0.3
+    ellipse_axes = (0.3, 0.25)
+    if (
+        (x - ellipse_center_x) ** 2 / ellipse_axes[0] ** 2
+        + (y - ellipse_center_y) ** 2 / ellipse_axes[1] ** 2
+    ) <= 1.0:
+        return 1
 
-    # Outside bounding box
-    if not (-half <= x <= half and -half <= y <= half):
-        return False
+    # Left eye: Square
+    square_center_x, square_center_y = -0.45, 0.45
+    if abs(x - square_center_x) <= 0.125 and abs(y - square_center_y) <= 0.125:
+        return 2
 
-    # Remove top-right inner square (cutout)
-    if (x > -half + t) and (y > -half + t):
-        return False
+    # Mouth: Lower half of ellipse
+    mouth_center_x, mouth_center_y = -0.1, -0.35
 
-    return True
+    if (
+        (x - mouth_center_x) ** 2 / 0.5**2 + (y - mouth_center_y) ** 2 / 0.3**2
+    ) <= 1.0 and (y < mouth_center_y):
+        return 3
+
+    return 0
+
+
+def is_inside_L_shape(x, y, params=None):
+    """
+    NumPy version of L-shape membership test.
+    Works with scalars or numpy arrays.
+    """
+
+    angle = -np.pi * 1.05
+    rot = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+
+    point = np.array([(x - 0.26) * 1.1, (y + 0.15) * 1.1])
+    rotated_point = rot @ point
+    X, Y = rotated_point[0], rotated_point[1]
+
+    in_long = (X < 2 / 11) & (X > 0) & (np.abs(Y) < 1 / 3)
+    in_short = (Y > (1 / 2 - 2 / 11)) & (Y < 1 / 2) & (X > 0) & (X < 1 / 2)
+
+    return in_long | in_short
 
 
 def is_inside_isotropy_test(x, y):
@@ -72,9 +105,8 @@ def conductivity_AD(x, y, background_func, inclusion_funcs, shape_choice, shape_
         Function (x, y) -> (a11, a12, a22) for background region.
     inclusion_funcs : callable or tuple of callables
         One or several functions (x, y) -> (a11, a12, a22) for inclusions.
-        For "two_ellipses", must be a tuple (func1, func2).
     shape_choice : str
-        "ellipse", "two_ellipses", or "L_shape".
+        "ellipse", "two_ellipses", "L_shape", "smiley", etc.
     shape_params : tuple
         Parameters defining the chosen shape.
     """
@@ -91,6 +123,30 @@ def conductivity_AD(x, y, background_func, inclusion_funcs, shape_choice, shape_
             return inclusion_funcs[0](x, y)
         elif inside_idx == 2:
             return inclusion_funcs[1](x, y)
+        else:
+            return background_func(x, y)
+
+    elif shape_choice == "smiley":
+        inside_idx = is_inside_smiley(x, y, shape_params)
+        if inside_idx == 1:
+            return inclusion_funcs[0](x, y)  # Right eye
+        elif inside_idx == 2:
+            return inclusion_funcs[1](x, y)  # Left eye
+        elif inside_idx == 3:
+            return inclusion_funcs[2](x, y)  # Mouth
+        else:
+            return background_func(x, y)
+
+    elif shape_choice == "two_ellipses_and_L":
+        ellipse1_params = shape_params[:4]
+        ellipse2_params = shape_params[4:8]
+
+        if is_inside_ellipse(x, y, ellipse1_params):
+            return inclusion_funcs[0](x, y)
+        elif is_inside_ellipse(x, y, ellipse2_params):
+            return inclusion_funcs[1](x, y)
+        elif is_inside_L_shape(x, y):
+            return inclusion_funcs[2](x, y)
         else:
             return background_func(x, y)
 
