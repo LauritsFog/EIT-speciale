@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+import matplotlib.colors as mcolors
 
 
 def plot_ND_map(
@@ -139,21 +140,9 @@ def plot_conductivity_components(
     n_points=500,
 ):
     """
-     Plot the conductivity tensor components (a11, a12, a22)
-     for a given conductivity function such as my_conductivity_AD(x, y, shape=...).
-
-     Parameters
-    -------
-     conductivity_func : callable
-         Function taking (x, y, shape=...) and returning (a11, a12, a22)
-     shape_choice : str
-         Which shape to visualize ("ellipse", "triangle", "U", ...)
-     title : str
-         Plot title
-     domain_radius : float
-         Radius of the circular domain (default = 1.0)
-     n_points : int
-         Grid resolution
+    Plot the conductivity tensor components (a11, a12, a22)
+    using a REVERSED grayscale colormap (Min=White, Max=Black)
+    and a shared colorbar.
     """
 
     domain_radius = 1.0
@@ -177,26 +166,38 @@ def plot_conductivity_components(
                 a12_grid[i, j] = a12
                 a22_grid[i, j] = a22
 
-    # Plot setup
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    # --- 1. Compute Global Min/Max for Shared Scale ---
+    all_values = np.array([a11_grid, a12_grid, a22_grid])
+    v_min = np.nanmin(all_values)
+    v_max = np.nanmax(all_values)
+
+    # --- 2. Use constrained_layout=True ---
+    # This automatically manages space for the colorbar so it doesn't overlap
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
+
     components = [
-        (a11_grid, r"$a_{11}$", "viridis"),
-        (a12_grid, r"$a_{12}$", "viridis"),
-        (a22_grid, r"$a_{22}$", "viridis"),
+        (a11_grid, r"$a_{11}$"),
+        (a12_grid, r"$a_{12}$"),
+        (a22_grid, r"$a_{22}$"),
     ]
 
-    for ax, (grid, label, cmap) in zip(axes, components):
+    im = None
+
+    for ax, (grid, label) in zip(axes, components):
         im = ax.imshow(
             grid,
             extent=[-domain_radius, domain_radius, -domain_radius, domain_radius],
             origin="lower",
-            cmap=cmap,
+            cmap="gray_r",
+            vmin=v_min,
+            vmax=v_max,
             aspect="equal",
         )
-        # ax.contour(X, Y, grid, levels=50, colors="white", linewidths=0.5, alpha=0.7)
         ax.set_title(f"{label}")
         ax.set_xlabel("x")
         ax.set_ylabel("y")
+
+        # Black circle for visibility
         ax.add_patch(
             plt.Circle(
                 (0, 0),
@@ -207,57 +208,90 @@ def plot_conductivity_components(
                 linewidth=1,
             )
         )
-        plt.colorbar(im, ax=ax, label=label)
+
+    # --- 3. Add Colorbar ---
+    # With constrained_layout, we don't need 'fraction' or 'pad' as much,
+    # but 'shrink' helps keep the bar from being too tall.
+    cbar = fig.colorbar(im, ax=axes, shrink=0.8, location="right")
+    cbar.set_label("Conductivity value")
 
     fig.suptitle(f"{title}", fontsize=16)
-    plt.tight_layout()
+
     return fig, axes
 
 
 def plot_highlighted_elements(
-    mesh, element_indices, inclusions=None, color="red", alpha=0.7
+    mesh, element_indices, values=None, color="red", alpha=0.7
 ):
     """
-     Plot 2D mesh with highlighted elements using matplotlib
+    Plot 2D mesh with highlighted elements using matplotlib.
 
-     Parameters:
+    Parameters:
     --------
-     mesh : dolfinx.mesh.Mesh
+    mesh : dolfinx.mesh.Mesh
          The mesh
-     element_indices : list or int
-         List of element indices to highlight, or single index
+    element_indices : list or int
+         List of element indices to highlight
+    values : list or np.ndarray, optional
+         Values corresponding to element_indices. If provided, elements are
+         colored using the inverted magma colormap (low=white, high=dark).
     """
     # Convert single index to list for uniform handling
     if isinstance(element_indices, int):
         element_indices = [element_indices]
+        if values is not None and isinstance(values, (int, float)):
+            values = [values]
 
     fig, ax = plt.subplots(figsize=(6, 6))
 
-    # Plot the entire mesh
+    # Plot the entire mesh (background)
     topology = mesh.topology
     tdim = topology.dim
     cells = topology.connectivity(tdim, 0).array.reshape(-1, tdim + 1)
     vertices = mesh.geometry.x
 
-    # Plot all cells (background mesh)
+    # Plot background mesh edges
     for cell in cells:
         poly = plt.Polygon(
             vertices[cell][:, :2],
             fill=None,
-            edgecolor="black",
+            edgecolor="gray",
             alpha=0.3,
-            linewidth=0.4,
+            linewidth=0.2,
         )
         ax.add_patch(poly)
 
-    # Highlight the specified elements in red
-    for element_index in element_indices:
+    # Setup Colormap if values are provided
+    cmap = None
+    norm = None
+
+    if values is not None:
+        if len(values) != len(element_indices):
+            raise ValueError("Length of 'values' must match 'element_indices'")
+
+        # 'magma_r' is the inverted magma map.
+        # Standard magma: Low=Black, High=White.
+        # Inverted magma (magma_r): Low=White, High=Black.
+        cmap = plt.get_cmap("magma_r")
+        norm = mcolors.Normalize(vmin=np.min(values), vmax=np.max(values))
+
+    # Highlight the specified elements
+    for i, element_index in enumerate(element_indices):
         if element_index < len(cells):
             highlight_cell = cells[element_index]
+
+            # Determine color
+            if values is not None:
+                # Map value to color
+                face_color = cmap(norm(values[i]))
+            else:
+                # Use static color
+                face_color = color
+
             poly_highlight = plt.Polygon(
                 vertices[highlight_cell][:, :2],
                 fill=True,
-                color=color,
+                color=face_color,
                 alpha=alpha,
                 linewidth=0,
             )
@@ -267,25 +301,19 @@ def plot_highlighted_elements(
                 f"Warning: Element index {element_index} out of range (0-{len(cells) - 1})"
             )
 
+    # Add Colorbar if values were used
+    if values is not None:
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        cbar = fig.colorbar(sm, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_label("Value")
+
     # Set plot properties
     ax.set_aspect("equal")
     ax.autoscale_view()
 
-    plt.xlabel("x")
-    plt.ylabel("y")
-
-    if inclusions:
-        # Create grid
-        x = np.linspace(-1, 1, 500)
-        y = np.linspace(-1, 1, 500)
-        X, Y = np.meshgrid(x, y)
-
-        for D in inclusions:
-            # Evaluate f(x, y)
-            Z = D.condition(X, Y)
-
-            # Plot contour f(x, y) = 0
-            ax.contour(X, Y, Z, levels=[0], colors="blue", linewidths=2)
+    plt.xlabel("$x_1$")
+    plt.ylabel("$x_2$")
 
     return fig, ax
 
@@ -300,6 +328,8 @@ def plot_highlighted_eigenvalues(mesh, element_indices, eigenvalue_dict):
          The mesh
      element_indices : list or int
          List of element indices to highlight, or single index
+     eigenvalue_dict : dict or np.ndarray
+         Dictionary mapping element indices to values, or array of values
     """
     # Convert single index to list for uniform handling
     if isinstance(element_indices, int):
@@ -313,29 +343,32 @@ def plot_highlighted_eigenvalues(mesh, element_indices, eigenvalue_dict):
     cells = topology.connectivity(tdim, 0).array.reshape(-1, tdim + 1)
     vertices = mesh.geometry.x
 
-    # Plot all cells (background mesh)
-    for cell in cells:
-        poly = plt.Polygon(
-            vertices[cell][:, :2], fill=None, edgecolor="gray", alpha=0.3, linewidth=0.2
-        )
-        ax.add_patch(poly)
-
+    # Prepare values
     if isinstance(eigenvalue_dict, np.ndarray):
         vals = eigenvalue_dict
     else:
         vals = np.array(list(eigenvalue_dict.values()), dtype=float)
+        # Assuming keys are sorted indices if passed as dict,
+        # or aligned with mesh cells if passed as array
         I = np.argsort(np.array(list(eigenvalue_dict.keys())))
         vals = vals[I]
-    vmin, vmax = np.min(vals[element_indices]), np.max(vals[element_indices])
-    cmap = plt.cm.viridis
 
-    # Highlight the specified elements in red
+    # Determine range for normalization based on highlighted elements
+    vmin, vmax = np.min(vals[element_indices]), np.max(vals[element_indices])
+
+    # Use inverted magma colormap (Low=White, High=Black/Dark)
+    cmap = plt.cm.magma_r
+
+    # Highlight the specified elements
     for element_index in element_indices:
         if element_index < len(cells):
             highlight_cell = cells[element_index]
             value = vals[element_index]
+
+            # Normalize value to 0-1 range
             norm_value = (value - vmin) / (vmax - vmin) if vmax > vmin else 0.5
             color = cmap(norm_value)
+
             poly_highlight = plt.Polygon(
                 vertices[highlight_cell][:, :2], fill=True, color=color, alpha=1
             )
@@ -345,10 +378,15 @@ def plot_highlighted_eigenvalues(mesh, element_indices, eigenvalue_dict):
                 f"Warning: Element index {element_index} out of range (0-{len(cells) - 1})"
             )
 
-    # add colorbar
-    sm = plt.cm.ScalarMappable(
-        cmap=plt.cm.viridis, norm=plt.Normalize(vmin=vmin, vmax=vmax)
-    )
+    # Plot all cells (background mesh)
+    for cell in cells:
+        poly = plt.Polygon(
+            vertices[cell][:, :2], fill=None, edgecolor="gray", alpha=0.3, linewidth=0.2
+        )
+        ax.add_patch(poly)
+
+    # Add colorbar
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=vmin, vmax=vmax))
     sm.set_array([])
     cbar = plt.colorbar(sm, ax=ax)
     cbar.set_label("Eigenvalue", rotation=270, labelpad=15)
@@ -361,12 +399,12 @@ def plot_highlighted_eigenvalues(mesh, element_indices, eigenvalue_dict):
     ax.set_xlim(-1, 1)
     ax.set_ylim(-1, 1)
 
-    # title = f"Mesh with {len(element_indices)} highlighted elements"
     if len(element_indices) == 1:
         title = f"Mesh with highlighted element {element_indices[0]}"
-    # plt.title(title)
-    plt.xlabel("x")
-    plt.ylabel("y")
+        # plt.title(title)
+
+    plt.xlabel("$x_1$")
+    plt.ylabel("$x_2$")
 
     return fig, ax
 

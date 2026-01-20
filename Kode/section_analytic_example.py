@@ -20,6 +20,141 @@ from inner_reconstruction_method import (
 
 
 # %%
+
+
+# def compute_solution_coefficients(r1, r2, n, polar_mats):
+#     """
+#     Compute coefficients [alpha1, alpha2, beta2, alpha3, beta3]
+#     for a 3-layer radially anisotropic disk with Neumann BC.
+
+#     Parameters
+#     a_thetaa_thetaa_theta-
+#     r1, r2 : float
+#         Radii separating layers (0 < r1 < r2 < 1)
+#     n : int
+#         Fourier mode index (n ≠ 0)
+#     polar_mats : list of 3 tuples
+#         Each tuple is the diagonal polar conductivity matrix for one layer:
+#         [(a_r1, a_theta1), (a_r2, a_theta2), (a_r3, a_theta3)]
+
+#     Returns
+#     a_thetaa_theta-
+#     coeffs_AD : ndarray
+#         [alpha_1, alpha_2, beta_2, alpha_3, beta_3]
+#     """
+#     m = abs(n)
+
+#     # Extract radial and tangential conductivities
+#     a_r = np.array([s[0] for s in polar_mats])
+#     a_theta = np.array([s[1] for s in polar_mats])
+
+#     # Anisotropy parameter
+#     kappa = np.sqrt(a_theta / a_r)
+
+#     # Precompute powers
+#     r1_k1 = r1 ** (kappa[0] * m)
+#     r1_k2 = r1 ** (kappa[1] * m)
+#     r2_k2 = r2 ** (kappa[1] * m)
+#     r2_k3 = r2 ** (kappa[2] * m)
+
+#     # Unknowns: [alpha1, alpha2, beta2, alpha3, beta3]
+#     A = np.zeros((5, 5))
+#     b = np.zeros(5)
+
+#     # a_theta Interface 1↔2 (continuity) a_theta
+#     A[0, 0] = r1_k1
+#     A[0, 1] = -r1_k2
+#     A[0, 2] = -(r1 ** (-kappa[1] * m))
+
+#     # a_theta Interface 1↔2 (flux continuity) a_theta
+#     A[1, 0] = a_r[0] * kappa[0] * r1 ** (kappa[0] * m - 1)
+#     A[1, 1] = -a_r[1] * kappa[1] * r1 ** (kappa[1] * m - 1)
+#     A[1, 2] = a_r[1] * kappa[1] * r1 ** (-kappa[1] * m - 1)
+
+#     # a_theta Interface 2↔3 (continuity) a_theta
+#     A[2, 1] = r2_k2
+#     A[2, 2] = r2 ** (-kappa[1] * m)
+#     A[2, 3] = -r2_k3
+#     A[2, 4] = -(r2 ** (-kappa[2] * m))
+
+#     # a_theta Interface 2↔3 (flux continuity) a_theta
+#     A[3, 1] = a_r[1] * kappa[1] * r2 ** (kappa[1] * m - 1)
+#     A[3, 2] = -a_r[1] * kappa[1] * r2 ** (-kappa[1] * m - 1)
+#     A[3, 3] = -a_r[2] * kappa[2] * r2 ** (kappa[2] * m - 1)
+#     A[3, 4] = a_r[2] * kappa[2] * r2 ** (-kappa[2] * m - 1)
+
+#     # a_theta Neumann BC a_theta
+#     A[4, 3] = a_r[2] * kappa[2] * m
+#     A[4, 4] = -a_r[2] * kappa[2] * m
+#     b[4] = 1.0
+
+#     coeffs_AD = np.linalg.solve(A, b)
+#     coeffs_AD = coeffs_AD.tolist()
+#     coeffs_AD = [
+#         (coeffs_AD[0], 0.0),
+#         (coeffs_AD[1], coeffs_AD[2]),
+#         (coeffs_AD[3], coeffs_AD[4]),
+#     ]
+#     return coeffs_AD
+
+# def exact_solution(x, y, n, radii, coeffs_AD, ks):
+#     """
+#     UFL version of the layered analytic solution:
+#     u_n(x,y) = v_n(r) * cos(n * theta)  (real-valued)
+
+#     Parameters
+#     ----------
+#     x, y : UFL expressions
+#         Symbolic coordinates (from ufl.SpatialCoordinate()).
+#     n : int
+#         Fourier mode number.
+#     radii : list or tuple of floats
+#         Layer boundaries [r1, r2, ...].
+#     coeffs_AD : list of tuples
+#         [(alpha1, beta1), (alpha2, beta2), (alpha3, beta3), ...].
+#     ks : list of floats
+#         Anisotropy exponents k_j for each layer.
+
+#     Returns
+#     -------
+#     u_expr : UFL expression
+#         Symbolic real-valued expression for u(x, y).
+#     """
+#     r = ufl.sqrt(x**2 + y**2)
+#     theta = ufl.atan2(y, x)
+#     m = abs(n)
+
+#     # Initialize v_expr
+#     v_expr = 0.0
+
+#     r1, r2 = radii
+
+#     # Layer 1
+#     cond = ufl.ge(r, r2)  # r >= r_2
+#     alpha_1, beta_1 = coeffs_AD[2]
+#     k_1 = ks[2]
+#     v_1 = alpha_1 * r ** (k_1 * m) + beta_1 * r ** (-k_1 * m)
+#     v_expr += ufl.conditional(cond, v_1, 0)
+
+#     # Layer 2
+#     cond = ufl.And(ufl.ge(r, r1), ufl.lt(r, r2))  # r_1 <= r < r_2
+#     alpha_2, beta_2 = coeffs_AD[1]
+#     k_2 = ks[1]
+#     v_2 = alpha_2 * r ** (k_2 * m) + beta_2 * r ** (-k_2 * m)
+#     v_expr += ufl.conditional(cond, v_2, 0)
+
+#     # Layer 3
+#     cond = ufl.lt(r, r1)  # r < r_1
+#     alpha_3, beta_3 = coeffs_AD[0]
+#     k_3 = ks[0]
+#     v_3 = alpha_3 * r ** (k_3 * m) + beta_3 * r ** (-k_3 * m)
+#     v_expr += ufl.conditional(cond, v_3, 0)
+
+#     # Real-valued field (cosine mode)
+#     u_expr = v_expr * ufl.cos(n * theta)
+#     return u_expr
+
+
 def estimate_convergence_rate(h_values, error_values):
     """
     Fits the power law E = C * h^k to the data.
@@ -158,85 +293,117 @@ def polar_to_euclidean(polar_conductivities_AD, x, y):
     return (Axx, Axy, Ayy)
 
 
-def compute_solution_coefficients(r1, r2, n, polar_mats):
+def compute_solution_coefficients(r1, n, polar_mats):
     """
-    Compute coefficients [alpha1, alpha2, beta2, alpha3, beta3]
-    for a 3-layer radially anisotropic disk with Neumann BC.
+    Compute coefficients [alpha1, alpha2, beta2]
+    for a 2-layer radially anisotropic disk (inner disk + outer ring)
+    with Neumann BC.
 
     Parameters
-    a_thetaa_thetaa_theta-
-    r1, r2 : float
-        Radii separating layers (0 < r1 < r2 < 1)
+    ----------
+    r1 : float
+        Radius separating the inner disk from the outer ring (0 < r1 < 1).
     n : int
-        Fourier mode index (n ≠ 0)
-    polar_mats : list of 3 tuples
+        Fourier mode index (n ≠ 0).
+    polar_mats : list of 2 tuples
         Each tuple is the diagonal polar conductivity matrix for one layer:
-        [(a_r1, a_theta1), (a_r2, a_theta2), (a_r3, a_theta3)]
+        [(a_r1, a_theta1), (a_r2, a_theta2)]
+        Layer 1 is inner (0 <= r < r1), Layer 2 is outer (r1 <= r <= 1).
 
     Returns
-    a_thetaa_theta-
-    coeffs_AD : ndarray
-        [alpha_1, alpha_2, beta_2, alpha_3, beta_3]
+    -------
+    coeffs_AD : list of tuples
+        [(alpha_1, 0.0), (alpha_2, beta_2)]
     """
     m = abs(n)
 
     # Extract radial and tangential conductivities
+    # Index 0 = Inner layer, Index 1 = Outer layer
     a_r = np.array([s[0] for s in polar_mats])
     a_theta = np.array([s[1] for s in polar_mats])
 
-    # Anisotropy parameter
+    # Anisotropy parameter k = sqrt(a_theta / a_r)
     kappa = np.sqrt(a_theta / a_r)
 
-    # Precompute powers
+    # Precompute powers at interface r1
+    # Layer 1 solution: v1 ~ r^(k1*m)
+    # Layer 2 solution: v2 ~ alpha2 * r^(k2*m) + beta2 * r^(-k2*m)
     r1_k1 = r1 ** (kappa[0] * m)
-    r1_k2 = r1 ** (kappa[1] * m)
-    r2_k2 = r2 ** (kappa[1] * m)
-    r2_k3 = r2 ** (kappa[2] * m)
+    r1_k2_pos = r1 ** (kappa[1] * m)
+    r1_k2_neg = r1 ** (-kappa[1] * m)
 
-    # Unknowns: [alpha1, alpha2, beta2, alpha3, beta3]
-    A = np.zeros((5, 5))
-    b = np.zeros(5)
+    # Unknowns: [alpha1, alpha2, beta2]
+    # We have 3 equations:
+    # 1. Continuity of u at r1
+    # 2. Continuity of flux at r1
+    # 3. Neumann BC at r=1
 
-    # a_theta Interface 1↔2 (continuity) a_theta
-    A[0, 0] = r1_k1
-    A[0, 1] = -r1_k2
-    A[0, 2] = -(r1 ** (-kappa[1] * m))
+    A = np.zeros((3, 3))
+    b = np.zeros(3)
 
-    # a_theta Interface 1↔2 (flux continuity) a_theta
-    A[1, 0] = a_r[0] * kappa[0] * r1 ** (kappa[0] * m - 1)
-    A[1, 1] = -a_r[1] * kappa[1] * r1 ** (kappa[1] * m - 1)
-    A[1, 2] = a_r[1] * kappa[1] * r1 ** (-kappa[1] * m - 1)
+    # --- Interface 1↔2 (Continuity of u) ---
+    # alpha1 * r1^(k1*m) = alpha2 * r1^(k2*m) + beta2 * r1^(-k2*m)
+    A[0, 0] = r1_k1  # alpha1
+    A[0, 1] = -r1_k2_pos  # alpha2
+    A[0, 2] = -r1_k2_neg  # beta2
 
-    # a_theta Interface 2↔3 (continuity) a_theta
-    A[2, 1] = r2_k2
-    A[2, 2] = r2 ** (-kappa[1] * m)
-    A[2, 3] = -r2_k3
-    A[2, 4] = -(r2 ** (-kappa[2] * m))
+    # --- Interface 1↔2 (Flux Continuity) ---
+    # a_r1 * partial_r(u1) = a_r2 * partial_r(u2)
+    # a_r1 * k1*m * r1^(k1*m - 1) * alpha1 =
+    # a_r2 * [ k2*m * r1^(k2*m - 1) * alpha2 - k2*m * r1^(-k2*m - 1) * beta2 ]
 
-    # a_theta Interface 2↔3 (flux continuity) a_theta
-    A[3, 1] = a_r[1] * kappa[1] * r2 ** (kappa[1] * m - 1)
-    A[3, 2] = -a_r[1] * kappa[1] * r2 ** (-kappa[1] * m - 1)
-    A[3, 3] = -a_r[2] * kappa[2] * r2 ** (kappa[2] * m - 1)
-    A[3, 4] = a_r[2] * kappa[2] * r2 ** (-kappa[2] * m - 1)
+    term1_flux = a_r[0] * kappa[0] * m * (r1 ** (kappa[0] * m - 1))
+    term2_flux_alpha = a_r[1] * kappa[1] * m * (r1 ** (kappa[1] * m - 1))
+    term2_flux_beta = -a_r[1] * kappa[1] * m * (r1 ** (-kappa[1] * m - 1))
 
-    # a_theta Neumann BC a_theta
-    A[4, 3] = a_r[2] * kappa[2] * m
-    A[4, 4] = -a_r[2] * kappa[2] * m
-    b[4] = 1.0
+    A[1, 0] = term1_flux  # alpha1
+    A[1, 1] = -term2_flux_alpha  # alpha2
+    A[
+        1, 2
+    ] = (
+        -term2_flux_beta
+    )  # beta2 (moved to LHS becomes positive, but deriv has negative sign)
+    # RHS term is - (... * beta2), moved to LHS is + (... * beta2)
+    # Wait, derivative of r^(-k) is -k * r^(-k-1).
+    # So RHS is a_r2 * ( ... * alpha2 + (-k2*m... * beta2) )
+    # LHS - RHS = 0 =>
+    # Coeff alpha1: +
+    # Coeff alpha2: - (positive term)
+    # Coeff beta2: - (negative term) = +
 
-    coeffs_AD = np.linalg.solve(A, b)
-    coeffs_AD = coeffs_AD.tolist()
-    coeffs_AD = [
-        (coeffs_AD[0], 0.0),
-        (coeffs_AD[1], coeffs_AD[2]),
-        (coeffs_AD[3], coeffs_AD[4]),
-    ]
-    return coeffs_AD
+    # Let's write explicitly:
+    # A[1,0]*alpha1 + A[1,1]*alpha2 + A[1,2]*beta2 = 0
+    # A[1,0] = a_r[0] * k1 * m * r1^(k1*m-1)
+    # A[1,1] = - (a_r[1] * k2 * m * r1^(k2*m-1))
+    # A[1,2] = - (a_r[1] * (-k2 * m) * r1^(-k2*m-1)) = + a_r[1] * k2 * m * r1^(-k2*m-1)
+
+    A[1, 2] = a_r[1] * kappa[1] * m * (r1 ** (-kappa[1] * m - 1))
+
+    # --- Neumann BC at r=1 ---
+    # a_r2 * partial_r(u2)|r=1 = 1
+    # partial_r(u2) = alpha2 * k2*m * r^(k2*m-1) - beta2 * k2*m * r^(-k2*m-1)
+    # At r=1, powers are 1.
+
+    # Coeff alpha2: a_r2 * k2 * m
+    A[2, 1] = a_r[1] * kappa[1] * m
+    # Coeff beta2: a_r2 * (-k2 * m)
+    A[2, 2] = -a_r[1] * kappa[1] * m
+
+    # alpha1 coefficient is 0 for BC equation
+    b[2] = 1.0
+
+    # Solve system
+    coeffs = np.linalg.solve(A, b)
+
+    # Format output: [(alpha1, beta1=0), (alpha2, beta2)]
+    coeffs = coeffs.tolist()
+
+    return [(coeffs[0], 0.0), (coeffs[1], coeffs[2])]
 
 
-def exact_solution(x, y, n, radii, coeffs_AD, ks):
+def exact_solution(x, y, n, r1, coeffs_AD, ks):
     """
-    UFL version of the layered analytic solution:
+    UFL version of the layered analytic solution for a single central inclusion:
     u_n(x,y) = v_n(r) * cos(n * theta)  (real-valued)
 
     Parameters
@@ -246,11 +413,13 @@ def exact_solution(x, y, n, radii, coeffs_AD, ks):
     n : int
         Fourier mode number.
     radii : list or tuple of floats
-        Layer boundaries [r1, r2, ...].
+        Layer boundaries [r1].
     coeffs_AD : list of tuples
-        [(alpha1, beta1), (alpha2, beta2), (alpha3, beta3), ...].
+        [(alpha1, beta1), (alpha2, beta2)].
+        Index 0: Inner disk (0 <= r < r1)
+        Index 1: Outer ring (r1 <= r <= 1)
     ks : list of floats
-        Anisotropy exponents k_j for each layer.
+        Anisotropy exponents k_j for each layer [k1, k2].
 
     Returns
     -------
@@ -261,31 +430,21 @@ def exact_solution(x, y, n, radii, coeffs_AD, ks):
     theta = ufl.atan2(y, x)
     m = abs(n)
 
-    # Initialize v_expr
-    v_expr = 0.0
+    # --- Layer 2: Outer Ring (r >= r1) ---
+    # Note: In UFL conditional(c, true_val, false_val)
+    # We check if we are in the outer layer first.
 
-    r1, r2 = radii
-
-    # Layer 1
-    cond = ufl.ge(r, r2)  # r >= r_2
-    alpha_1, beta_1 = coeffs_AD[2]
-    k_1 = ks[2]
-    v_1 = alpha_1 * r ** (k_1 * m) + beta_1 * r ** (-k_1 * m)
-    v_expr += ufl.conditional(cond, v_1, 0)
-
-    # Layer 2
-    cond = ufl.And(ufl.ge(r, r1), ufl.lt(r, r2))  # r_1 <= r < r_2
     alpha_2, beta_2 = coeffs_AD[1]
     k_2 = ks[1]
     v_2 = alpha_2 * r ** (k_2 * m) + beta_2 * r ** (-k_2 * m)
-    v_expr += ufl.conditional(cond, v_2, 0)
 
-    # Layer 3
-    cond = ufl.lt(r, r1)  # r < r_1
-    alpha_3, beta_3 = coeffs_AD[0]
-    k_3 = ks[0]
-    v_3 = alpha_3 * r ** (k_3 * m) + beta_3 * r ** (-k_3 * m)
-    v_expr += ufl.conditional(cond, v_3, 0)
+    # --- Layer 1: Inner Disk (r < r1) ---
+    alpha_1, beta_1 = coeffs_AD[0]
+    k_1 = ks[0]
+    v_1 = alpha_1 * r ** (k_1 * m) + beta_1 * r ** (-k_1 * m)
+
+    # Combine: If r >= r1 use v_2, else use v_1
+    v_expr = ufl.conditional(ufl.ge(r, r1), v_2, v_1)
 
     # Real-valued field (cosine mode)
     u_expr = v_expr * ufl.cos(n * theta)
@@ -295,56 +454,46 @@ def exact_solution(x, y, n, radii, coeffs_AD, ks):
 ### Conductivity
 
 # Define geometry
-r1, r2 = 0.3, 0.7
+r1 = 0.5
 
-shape_choice = "two_ellipses"
-shape_params = (0, 0, r1, r1, 0, 0, r2, r2)
+shape_choice = "ellipse"
+shape_params = (0, 0, r1, r1)
 
 # Each layer given in polar coordinates (a_r, a_theta)
-# polar_conductivities_AD = [
-#     (1.0, 1.0),  # 0 <= r < r1, layer 3
-#     (1.0, 1.0),  # r1 <= r < r2, layer 2
-#     (1.0, 1.0),  # r2 <= r <= 1, layer 1
-# ]
-
 polar_conductivities_AD = [
-    (16.0, 12.0),  # 0 <= r < r1, layer 3
     (4.0, 8.0),  # r1 <= r < r2, layer 2
     (1.0, 1.0),  # r2 <= r <= 1, layer 1
 ]
 
 polar_conductivities_A0 = [
-    polar_conductivities_AD[2],
-    polar_conductivities_AD[2],
-    polar_conductivities_AD[2],
+    polar_conductivities_AD[1],
+    polar_conductivities_AD[1],
 ]
 
 # Anisotropy factors κ_j = sqrt(a_theta^(j) / a_r^(j))
 ks_AD = [
     np.sqrt(polar_conductivities_AD[0][1] / polar_conductivities_AD[0][0]),  # Layer 3
     np.sqrt(polar_conductivities_AD[1][1] / polar_conductivities_AD[1][0]),  # Layer 2
-    np.sqrt(polar_conductivities_AD[2][1] / polar_conductivities_AD[2][0]),  # Layer 1
 ]
 
 ks_A0 = [
     np.sqrt(polar_conductivities_A0[0][1] / polar_conductivities_A0[0][0]),  # Layer 3
     np.sqrt(polar_conductivities_A0[1][1] / polar_conductivities_A0[1][0]),  # Layer 2
-    np.sqrt(polar_conductivities_A0[2][1] / polar_conductivities_A0[2][0]),  # Layer 1
 ]
 
-k = ks_A0[2]  # Outer layer anisotropy
+k = ks_A0[1]  # Outer layer anisotropy
 
 ### Setings
 
 noise_level = 0.0
 
-max_freq = 25
+max_freq = 15
 modes = range(1, max_freq + 1)
 
 # Eigenmode frequency
 n = 3
 
-h_array = [0.06, 0.04, 0.02]  # , 0.01, 0.005]
+h_array = [0.06, 0.04]  # , 0.02, 0.01, 0.005]
 h_array = np.array(h_array)
 
 recon_h = 0.061
@@ -362,12 +511,9 @@ radial_frechet_decay = (h_array[-1] ** 2) * (
 )
 
 # Check inner most layer (layer 3) first.
-my_conductivity_A0 = lambda x, y: polar_to_euclidean(polar_conductivities_AD[2], x, y)
+my_conductivity_A0 = lambda x, y: polar_to_euclidean(polar_conductivities_AD[1], x, y)
 inclusion_conductivity_1 = lambda x, y: polar_to_euclidean(
     polar_conductivities_AD[0], x, y
-)
-inclusion_conductivity_2 = lambda x, y: polar_to_euclidean(
-    polar_conductivities_AD[1], x, y
 )
 
 
@@ -376,14 +522,14 @@ def my_conductivity_AD(x, y):
         x,
         y,
         my_conductivity_A0,
-        (inclusion_conductivity_1, inclusion_conductivity_2),
+        inclusion_conductivity_1,
         shape_choice,
         shape_params,
     )
 
 
-coeffs_AD = compute_solution_coefficients(r1, r2, n, polar_conductivities_AD)
-coeffs_A0 = compute_solution_coefficients(r1, r2, n, polar_conductivities_A0)
+coeffs_AD = compute_solution_coefficients(r1, n, polar_conductivities_AD)
+coeffs_A0 = compute_solution_coefficients(r1, n, polar_conductivities_A0)
 
 # Visualization
 fig, axes = plot_conductivity_components(my_conductivity_AD, title="")
@@ -391,11 +537,11 @@ plt.savefig("Figures/Analytic_example/Conductivity_distribution_analytic_example
 
 
 def u_exact_AD(x, y):
-    return exact_solution(x, y, n, [r1, r2], coeffs_AD, ks_AD)
+    return exact_solution(x, y, n, r1, coeffs_AD, ks_AD)
 
 
 def u_exact_A0(x, y):
-    return exact_solution(x, y, n, [r1, r2], coeffs_A0, ks_A0)
+    return exact_solution(x, y, n, r1, coeffs_A0, ks_A0)
 
 
 errors_AD = np.zeros((len(h_array), 1))
@@ -406,6 +552,20 @@ eigenval_errors_A0 = np.zeros((max_freq, len(h_array)))
 
 radial_dist_lists = []
 frechet_quantity_lists = []
+
+ntd_exact_eigenvalues_AD = []
+ntd_exact_eigenvalues_A0 = []
+
+for mode in modes:
+    coeffs_temp = compute_solution_coefficients(r1, mode, polar_conductivities_AD)
+    (alpha1, beta1), (alpha2, beta2) = coeffs_temp
+
+    ntd_exact_eigenvalues_AD.append(alpha2 + beta2)
+
+    coeffs_temp = compute_solution_coefficients(r1, mode, polar_conductivities_A0)
+    (alpha1, beta1), (alpha2, beta2) = coeffs_temp
+
+    ntd_exact_eigenvalues_A0.append(alpha2 + beta2)
 
 for i, cl in enumerate(h_array):
     print(f"Characeristic length: {cl}")
@@ -450,31 +610,13 @@ for i, cl in enumerate(h_array):
 
         ntd_fem_eigenvalues_A0 = np.diag(ntd_A0[max_freq:, max_freq:])
 
-    ntd_exact_eigenvalues_AD = []
-    ntd_exact_eigenvalues_A0 = []
-
-    for mode in modes:
-        coeffs_temp = compute_solution_coefficients(
-            r1, r2, mode, polar_conductivities_AD
-        )
-        (alpha1, beta1), (alpha2, beta2), (alpha3, beta3) = coeffs_temp
-
-        ntd_exact_eigenvalues_AD.append(alpha3 + beta3)
-
-        coeffs_temp = compute_solution_coefficients(
-            r1, r2, mode, polar_conductivities_A0
-        )
-        (alpha1, beta1), (alpha2, beta2), (alpha3, beta3) = coeffs_temp
-
-        ntd_exact_eigenvalues_A0.append(alpha3 + beta3)
-
     eigenval_errors_AD[:, i] = (
         ntd_exact_eigenvalues_AD - ntd_fem_eigenvalues_AD
-    ) / np.abs(ntd_exact_eigenvalues_AD)
+    )  # / np.abs(ntd_exact_eigenvalues_AD)
 
     eigenval_errors_A0[:, i] = (
         ntd_exact_eigenvalues_A0 - ntd_fem_eigenvalues_A0
-    ) / np.abs(ntd_exact_eigenvalues_A0)
+    )  # / np.abs(ntd_exact_eigenvalues_A0)
 
     recon_basis_solutions = interpolate_solutions_to_new_mesh(solver_A0, recon_solver)
 
@@ -514,7 +656,7 @@ ax.semilogy(
     "o-",
     linewidth=2,
     markersize=6,
-    label="$u_h^{A_D}$",
+    label="Solution error with $A_D$",
 )
 ax.semilogy(
     h_array,
@@ -522,7 +664,7 @@ ax.semilogy(
     "o-",
     linewidth=2,
     markersize=6,
-    label="$u_h^{A_0}$",
+    label="Solution error with $A_0$",
 )
 ax.semilogy(
     h_array,
@@ -557,7 +699,7 @@ ax.semilogy(
     "o-",
     linewidth=2,
     markersize=6,
-    label="$u_h^{A_D}$",
+    label="Eigenvalue error with $A_D$",
 )
 ax.semilogy(
     h_array,
@@ -565,7 +707,7 @@ ax.semilogy(
     "o-",
     linewidth=2,
     markersize=6,
-    label="$u_h^{A_0}$",
+    label="Eigenvalue error with $A_0$",
 )
 ax.semilogy(
     h_array,
@@ -589,7 +731,9 @@ plt.savefig("Figures/Analytic_example/ND_map_smallest_eigenvalue_error_convergen
 
 idx_start = 8
 c_AD, k_AD = estimate_convergence_rate(
-    modes[idx_start:], np.abs(eigenval_errors_AD[idx_start:, 0])
+    modes[idx_start:],
+    np.abs(eigenval_errors_AD[idx_start:, 0])
+    / np.abs(ntd_exact_eigenvalues_AD[idx_start:]),
 )
 
 fig, ax = plt.subplots(1, 1, figsize=(6, 4))
@@ -598,7 +742,7 @@ ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 for i in range(len(h_array)):
     ax.semilogy(
         modes,
-        np.abs(eigenval_errors_AD[:, i]),
+        np.abs(eigenval_errors_AD[:, i]) / np.abs(ntd_exact_eigenvalues_AD),
         "o-",
         linewidth=2,
         markersize=4,
@@ -621,7 +765,9 @@ plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_AD.pd
 
 idx_start = 8
 c_A0, k_A0 = estimate_convergence_rate(
-    modes[idx_start:], np.abs(eigenval_errors_A0[idx_start:, 0])
+    modes[idx_start:],
+    np.abs(eigenval_errors_A0[idx_start:, 0])
+    / np.abs(ntd_exact_eigenvalues_A0[idx_start:]),
 )
 
 fig, ax = plt.subplots(1, 1, figsize=(6, 4))
@@ -630,7 +776,7 @@ ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 for i in range(len(h_array)):
     ax.semilogy(
         modes,
-        np.abs(eigenval_errors_A0[:, i]),
+        np.abs(eigenval_errors_A0[:, i]) / np.abs(ntd_exact_eigenvalues_A0),
         "o-",
         linewidth=2,
         markersize=4,
@@ -659,7 +805,7 @@ ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 for i in range(len(h_array)):
     ax.plot(
         modes,
-        eigenval_errors_AD[:, i],
+        eigenval_errors_AD[:, i] / np.abs(ntd_exact_eigenvalues_AD),
         "o-",
         linewidth=2,
         markersize=4,

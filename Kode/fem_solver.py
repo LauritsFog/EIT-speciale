@@ -361,6 +361,8 @@ class FemConductivitySolver:
             # The magnitude squared of the gradient is ufl.inner(ufl.grad(diff), ufl.grad(diff))
 
             # Integrand: (e * e) + (grad(e) . grad(e))
+            # integrand = ufl.inner(ufl.grad(diff), ufl.grad(diff))
+
             integrand = ufl.inner(diff, diff) + ufl.inner(
                 ufl.grad(diff), ufl.grad(diff)
             )

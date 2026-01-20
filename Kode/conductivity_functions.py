@@ -12,9 +12,9 @@ def is_inside_ellipse(x, y, params):
 def is_inside_two_ellipses(x, y, params):
     """Return 1 or 2 if inside one of two ellipses, else 0."""
     cx1, cy1, a1, b1, cx2, cy2, a2, b2 = params
-    if is_inside_ellipse(x, y, (cx1, cy1), (a1, b1)):
+    if is_inside_ellipse(x, y, (cx1, cy1, a1, b1)):
         return 1
-    elif is_inside_ellipse(x, y, (cx2, cy2), (a2, b2)):
+    elif is_inside_ellipse(x, y, (cx2, cy2, a2, b2)):
         return 2
     else:
         return 0
@@ -111,8 +111,7 @@ def conductivity_AD(x, y, background_func, inclusion_funcs, shape_choice, shape_
         Parameters defining the chosen shape.
     """
     if shape_choice == "ellipse":
-        center, axes = shape_params
-        if is_inside_ellipse(x, y, center, axes):
+        if is_inside_ellipse(x, y, shape_params):
             return inclusion_funcs(x, y)
         else:
             return background_func(x, y)

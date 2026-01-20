@@ -31,7 +31,7 @@ import numpy as np
 seed = 44
 np.random.seed(seed)
 
-characteristic_length = 0.01
+characteristic_length = 0.03
 recon_h = 0.04
 
 max_freq = 15
@@ -117,7 +117,7 @@ plt.savefig("Figures/Regularization_parameter/Target_inclusion.pdf")
 recon_errors_reg = []
 alpha_regs = []
 
-mus = np.linspace(0.9999, 0.9999999, 200)
+mus = np.linspace(0.9999, 0.9999999, 300)
 
 for mu in mus:
     alpha_reg = -mu * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD)))
@@ -140,8 +140,8 @@ optim_alpha = alpha_regs[optim_alpha_idx]
 sub_optim_alpha = alpha_regs[optim_alpha_idx - 40]
 
 print(f"Optimal mu without noise: {mus[optim_alpha_idx]}")
-print(f"Sub-optimal alpha with noise: {sub_optim_alpha}")
-print(f"Optimal alpha with noise: {optim_alpha}")
+print(f"Sub-optimal alpha without noise: {sub_optim_alpha}")
+print(f"Optimal alpha without noise: {optim_alpha}")
 
 recon_inclusion_optim = reconstruct_inclusions(eigenvalue_dict, alpha_reg=optim_alpha)
 
@@ -150,24 +150,26 @@ if min(recon_errors_reg) != np.inf:
         alpha_regs, recon_errors_reg, optim_alpha, sub_optim_alpha
     )
 
-plt.savefig("Figures/Regularization_parameter/Recon_error_no_noise.pdf")
+    plt.savefig("Figures/Regularization_parameter/Recon_error_no_noise.pdf")
 
 if len(recon_inclusion_optim) > 0:
     plot_highlighted_eigenvalues(recon_mesh, recon_inclusion_optim, eigenvalue_dict)
 
-plt.savefig("Figures/Regularization_parameter/Optimal_alpha_recon_no_noise.pdf")
+    plt.savefig("Figures/Regularization_parameter/Optimal_alpha_recon_no_noise.pdf")
 
 recon_inclusion_reg = reconstruct_inclusions(eigenvalue_dict, alpha_reg=sub_optim_alpha)
 
-plot_highlighted_eigenvalues(recon_mesh, recon_inclusion_reg, eigenvalue_dict)
+if len(recon_inclusion_reg) > 0:
+    plot_highlighted_eigenvalues(recon_mesh, recon_inclusion_reg, eigenvalue_dict)
 
-plt.savefig("Figures/Regularization_parameter/Sub_optimal_alpha_recon_no_noise.pdf")
+    plt.savefig("Figures/Regularization_parameter/Sub_optimal_alpha_recon_no_noise.pdf")
 
 recon_inclusion_reg = reconstruct_inclusions(eigenvalue_dict, alpha_reg=0)
 
-plot_highlighted_eigenvalues(recon_mesh, recon_inclusion_reg, eigenvalue_dict)
+if len(recon_inclusion_reg) > 0:
+    plot_highlighted_eigenvalues(recon_mesh, recon_inclusion_reg, eigenvalue_dict)
 
-plt.savefig("Figures/Regularization_parameter/Alpha_zero_recon_no_noise.pdf")
+    plt.savefig("Figures/Regularization_parameter/Alpha_zero_recon_no_noise.pdf")
 
 ### Reconstruction with noisy data
 
@@ -182,7 +184,7 @@ eigenvalue_dict_noise, _ = compute_reconstruction_test_values(
 recon_errors_reg = []
 alpha_regs = []
 
-mus = np.linspace(1.000000001, 1.000001, 200)
+mus = np.linspace(1.0000000001, 1.000001, 300)
 
 for mu in mus:
     alpha_reg = -mu * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
@@ -204,8 +206,10 @@ for mu in mus:
 
 optim_alpha_idx = np.argmin(recon_errors_reg)
 optim_alpha = alpha_regs[optim_alpha_idx]
+sub_optim_alpha = alpha_regs[optim_alpha_idx + 70]
 
 print(f"Optimal mu with noise: {mus[optim_alpha_idx]}")
+print(f"Sub-optimal alpha with noise: {sub_optim_alpha}")
 print(f"Optimal alpha with noise: {optim_alpha}")
 
 recon_inclusion_optim = reconstruct_inclusions(
@@ -213,15 +217,33 @@ recon_inclusion_optim = reconstruct_inclusions(
 )
 
 if min(recon_errors_reg) != np.inf:
-    plot_inclusion_reconstruction_error(alpha_regs, recon_errors_reg, optim_alpha)
+    plot_inclusion_reconstruction_error(
+        alpha_regs, recon_errors_reg, optim_alpha, sub_optim_alpha
+    )
 
-plt.savefig("Figures/Regularization_parameter/Recon_error_noise.pdf")
+    plt.savefig("Figures/Regularization_parameter/Recon_error_noise.pdf")
 
 if len(recon_inclusion_optim) > 0:
     plot_highlighted_eigenvalues(
         recon_mesh, recon_inclusion_optim, eigenvalue_dict_noise
     )
 
-plt.savefig("Figures/Regularization_parameter/Optimal_alpha_recon_noise.pdf")
+    plt.savefig("Figures/Regularization_parameter/Optimal_alpha_recon_noise.pdf")
+
+recon_inclusion_reg = reconstruct_inclusions(
+    eigenvalue_dict_noise, alpha_reg=sub_optim_alpha
+)
+
+if len(recon_inclusion_reg) > 0:
+    plot_highlighted_eigenvalues(recon_mesh, recon_inclusion_reg, eigenvalue_dict_noise)
+
+    plt.savefig("Figures/Regularization_parameter/Sub_optimal_alpha_recon_noise.pdf")
+
+recon_inclusion_reg = reconstruct_inclusions(eigenvalue_dict_noise, alpha_reg=0)
+
+if len(recon_inclusion_reg) > 0:
+    plot_highlighted_eigenvalues(recon_mesh, recon_inclusion_reg, eigenvalue_dict_noise)
+
+    plt.savefig("Figures/Regularization_parameter/Alpha_zero_recon_noise.pdf")
 
 plt.show()
