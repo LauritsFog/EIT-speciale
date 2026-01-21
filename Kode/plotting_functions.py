@@ -141,8 +141,7 @@ def plot_conductivity_components(
 ):
     """
     Plot the conductivity tensor components (a11, a12, a22)
-    using a REVERSED grayscale colormap (Min=White, Max=Black)
-    and a shared colorbar.
+    using the viridis colormap and a shared colorbar.
     """
 
     domain_radius = 1.0
@@ -172,7 +171,6 @@ def plot_conductivity_components(
     v_max = np.nanmax(all_values)
 
     # --- 2. Use constrained_layout=True ---
-    # This automatically manages space for the colorbar so it doesn't overlap
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
 
     components = [
@@ -188,7 +186,7 @@ def plot_conductivity_components(
             grid,
             extent=[-domain_radius, domain_radius, -domain_radius, domain_radius],
             origin="lower",
-            cmap="gray_r",
+            cmap="viridis",  # Changed to viridis
             vmin=v_min,
             vmax=v_max,
             aspect="equal",
@@ -210,8 +208,6 @@ def plot_conductivity_components(
         )
 
     # --- 3. Add Colorbar ---
-    # With constrained_layout, we don't need 'fraction' or 'pad' as much,
-    # but 'shrink' helps keep the bar from being too tall.
     cbar = fig.colorbar(im, ax=axes, shrink=0.8, location="right")
     cbar.set_label("Conductivity value")
 
@@ -220,9 +216,7 @@ def plot_conductivity_components(
     return fig, axes
 
 
-def plot_highlighted_elements(
-    mesh, element_indices, values=None, color="red", alpha=0.7
-):
+def plot_highlighted_elements(mesh, element_indices, color="red", alpha=0.7):
     """
     Plot 2D mesh with highlighted elements using matplotlib.
 
@@ -232,15 +226,14 @@ def plot_highlighted_elements(
          The mesh
     element_indices : list or int
          List of element indices to highlight
-    values : list or np.ndarray, optional
-         Values corresponding to element_indices. If provided, elements are
-         colored using the inverted magma colormap (low=white, high=dark).
+    color : str, optional
+         Color of the highlighted elements (default is "red")
+    alpha : float, optional
+         Transparency of the highlighted elements (default is 0.7)
     """
     # Convert single index to list for uniform handling
     if isinstance(element_indices, int):
         element_indices = [element_indices]
-        if values is not None and isinstance(values, (int, float)):
-            values = [values]
 
     fig, ax = plt.subplots(figsize=(6, 6))
 
@@ -249,6 +242,24 @@ def plot_highlighted_elements(
     tdim = topology.dim
     cells = topology.connectivity(tdim, 0).array.reshape(-1, tdim + 1)
     vertices = mesh.geometry.x
+
+    # Highlight the specified elements
+    for element_index in element_indices:
+        if element_index < len(cells):
+            highlight_cell = cells[element_index]
+
+            poly_highlight = plt.Polygon(
+                vertices[highlight_cell][:, :2],
+                fill=True,
+                color=color,
+                alpha=alpha,
+                linewidth=0,
+            )
+            ax.add_patch(poly_highlight)
+        else:
+            print(
+                f"Warning: Element index {element_index} out of range (0-{len(cells) - 1})"
+            )
 
     # Plot background mesh edges
     for cell in cells:
@@ -261,56 +272,12 @@ def plot_highlighted_elements(
         )
         ax.add_patch(poly)
 
-    # Setup Colormap if values are provided
-    cmap = None
-    norm = None
-
-    if values is not None:
-        if len(values) != len(element_indices):
-            raise ValueError("Length of 'values' must match 'element_indices'")
-
-        # 'magma_r' is the inverted magma map.
-        # Standard magma: Low=Black, High=White.
-        # Inverted magma (magma_r): Low=White, High=Black.
-        cmap = plt.get_cmap("magma_r")
-        norm = mcolors.Normalize(vmin=np.min(values), vmax=np.max(values))
-
-    # Highlight the specified elements
-    for i, element_index in enumerate(element_indices):
-        if element_index < len(cells):
-            highlight_cell = cells[element_index]
-
-            # Determine color
-            if values is not None:
-                # Map value to color
-                face_color = cmap(norm(values[i]))
-            else:
-                # Use static color
-                face_color = color
-
-            poly_highlight = plt.Polygon(
-                vertices[highlight_cell][:, :2],
-                fill=True,
-                color=face_color,
-                alpha=alpha,
-                linewidth=0,
-            )
-            ax.add_patch(poly_highlight)
-        else:
-            print(
-                f"Warning: Element index {element_index} out of range (0-{len(cells) - 1})"
-            )
-
-    # Add Colorbar if values were used
-    if values is not None:
-        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-        sm.set_array([])
-        cbar = fig.colorbar(sm, ax=ax, fraction=0.046, pad=0.04)
-        cbar.set_label("Value")
-
     # Set plot properties
     ax.set_aspect("equal")
-    ax.autoscale_view()
+
+    # Set fixed limits so the unit disk touches the sides
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
 
     plt.xlabel("$x_1$")
     plt.ylabel("$x_2$")

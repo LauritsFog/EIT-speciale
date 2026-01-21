@@ -28,13 +28,13 @@ import numpy as np
 # Frechet derivative DLambda(A0;c(alpha/beta)^2 I) with test
 # LambdaAD - LambdaA0 - DLambda(A0;c(alpha/beta)^2 I) <= 0
 
-seed = 44
-np.random.seed(seed)
 
-characteristic_length = 0.03
+seed = np.random.seed()
+
+characteristic_length = 0.01
 recon_h = 0.04
 
-max_freq = 15
+max_freq = 14
 
 # Tolerance in the inclusion test: min(eigenvalues) + tol > 0
 delta = 1e-4
@@ -92,10 +92,6 @@ plot_conductivity_components(AD_fun, title="")
 
 plt.savefig("Figures/Regularization_parameter/Conductivity_AD.pdf")
 
-recon_solver.plot_conductivity_components(title="")
-
-plt.savefig("Figures/Regularization_parameter/Recon_target.pdf")
-
 gradients = precompute_gradients(recon_basis_solutions, recon_mesh)
 
 ### Reconstruction without noisy data
@@ -137,7 +133,7 @@ for mu in mus:
 
 optim_alpha_idx = np.argmin(recon_errors_reg)
 optim_alpha = alpha_regs[optim_alpha_idx]
-sub_optim_alpha = alpha_regs[optim_alpha_idx - 40]
+sub_optim_alpha = alpha_regs[optim_alpha_idx - 50]
 
 print(f"Optimal mu without noise: {mus[optim_alpha_idx]}")
 print(f"Sub-optimal alpha without noise: {sub_optim_alpha}")
@@ -184,7 +180,7 @@ eigenvalue_dict_noise, _ = compute_reconstruction_test_values(
 recon_errors_reg = []
 alpha_regs = []
 
-mus = np.linspace(1.0000000001, 1.000001, 300)
+mus = np.linspace(1.00000000001, 1.00001, 300)
 
 for mu in mus:
     alpha_reg = -mu * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
@@ -206,7 +202,10 @@ for mu in mus:
 
 optim_alpha_idx = np.argmin(recon_errors_reg)
 optim_alpha = alpha_regs[optim_alpha_idx]
-sub_optim_alpha = alpha_regs[optim_alpha_idx + 70]
+if optim_alpha_idx + 30 < len(alpha_regs):
+    sub_optim_alpha = alpha_regs[optim_alpha_idx + 50]
+else:
+    sub_optim_alpha = alpha_regs[len(alpha_regs) - 1]
 
 print(f"Optimal mu with noise: {mus[optim_alpha_idx]}")
 print(f"Sub-optimal alpha with noise: {sub_optim_alpha}")

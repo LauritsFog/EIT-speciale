@@ -487,7 +487,7 @@ k = ks_A0[1]  # Outer layer anisotropy
 
 noise_level = 0.0
 
-max_freq = 15
+max_freq = 5
 modes = range(1, max_freq + 1)
 
 # Eigenmode frequency
@@ -496,7 +496,7 @@ n = 3
 h_array = [0.06, 0.04]  # , 0.02, 0.01, 0.005]
 h_array = np.array(h_array)
 
-recon_h = 0.061
+recon_h = 0.06
 recon_solver = FemConductivitySolver(mesh_characteristic_length=recon_h)
 recon_mesh = recon_solver.mesh
 
@@ -572,6 +572,9 @@ for i, cl in enumerate(h_array):
 
     solver_AD = FemConductivitySolver(mesh_characteristic_length=cl)
     c, alpha, beta = solver_AD.set_conductivity(my_conductivity_AD, my_conductivity_A0)
+
+    print(f"Positive definiteness constant: {c}")
+
     const = c * (alpha**2) / (beta**2)
 
     mesh = solver_AD.get_mesh()

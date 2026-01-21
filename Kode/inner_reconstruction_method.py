@@ -193,9 +193,9 @@ def compute_classification_error(mesh, target_indeces, recon_inclusion):
     target_set = set(target_indeces)
     reconstructed_set = set(recon_inclusion)
 
-    false_negatives = len(target_set - reconstructed_set)
+    false_negatives = 1.7 * len(target_set - reconstructed_set)
     false_positives = len(reconstructed_set - target_set)
 
-    classification_error = (false_negatives + false_positives) / num_elements
+    classification_error = false_negatives + false_positives
 
     return classification_error

@@ -91,9 +91,9 @@ polar_conductivities_Atilde = [
 
 ### Setings
 
-cl = 0.01
+h = 0.01
 
-max_freq = 5
+max_freq = 10
 modes = range(1, max_freq + 1)
 
 A0 = lambda x, y: polar_to_euclidean(polar_conductivities_A[1], x, y)
@@ -130,7 +130,7 @@ def my_conductivity_Atilde(x, y):
     )
 
 
-solver_A = FemConductivitySolver(mesh_characteristic_length=cl)
+solver_A = FemConductivitySolver(mesh_characteristic_length=h)
 solver_A.set_conductivity(my_conductivity_A, A0)
 
 mesh = solver_A.get_mesh()
@@ -150,6 +150,6 @@ print(np.diag(ntd_Atilde))
 fig, axes = plot_conductivity_components(my_conductivity_A, title="A")
 
 fig, axes = plot_conductivity_components(my_conductivity_Atilde, title="")
-# plt.savefig("Figures/Analytic_example/non_uniqueness_example.pdf")
+plt.savefig("Figures/Analytic_example/non_uniqueness_example.pdf")
 
 plt.show()
