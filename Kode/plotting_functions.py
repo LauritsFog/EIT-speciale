@@ -134,6 +134,163 @@ def plot_errors(errors, mesh_sizes=None, labels=None, title="Error Convergence")
     return fig, ax
 
 
+import matplotlib.pyplot as plt
+import numpy as np
+
+
+def plot_target(
+    conductivity_func,
+    title="Target",
+    n_points=500,
+):
+    """
+    Plot the target inclusion as a binary black-and-white image.
+
+    Black: The perturbation (A - I) is Positive Definite.
+    White: The background (A = I) or non-positive definite regions.
+    """
+
+    domain_radius = 1.0
+
+    # Grid setup
+    xi = np.linspace(-domain_radius, domain_radius, n_points)
+    yi = np.linspace(-domain_radius, domain_radius, n_points)
+    X, Y = np.meshgrid(xi, yi)
+
+    # Mask: 0 (White) -> Background, 1 (Black) -> Pos Def Inclusion
+    mask = np.zeros_like(X)
+
+    # Compute definiteness condition
+    for i in range(X.shape[0]):
+        for j in range(X.shape[1]):
+            x_val, y_val = X[i, j], Y[i, j]
+
+            # Check if inside the domain
+            if x_val**2 + y_val**2 <= domain_radius**2:
+                a11, a12, a22 = conductivity_func(x_val, y_val)
+
+                # Assume background A_0 is Identity (I)
+                # Calculate difference matrix D = A - I
+                d11 = a11 - 1.0
+                d22 = a22 - 1.0
+                d12 = a12
+
+                # Check for Positive Definiteness: Trace > 0 and Det > 0
+                trace = d11 + d22
+                det = d11 * d22 - d12**2
+
+                # Use a small epsilon for numerical stability
+                if trace > 1e-12 and det > 1e-12:
+                    mask[i, j] = 1.0
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(6, 6), constrained_layout=True)
+
+    ax.imshow(
+        mask,
+        extent=[-domain_radius, domain_radius, -domain_radius, domain_radius],
+        origin="lower",
+        cmap="gray_r",  # 0=White, 1=Black
+        vmin=0,
+        vmax=1,
+        aspect="equal",
+        interpolation="nearest",  # Keeps the edges sharp (binary)
+    )
+
+    ax.set_title(title, fontsize=16)
+    ax.set_xlabel("$x_1$")
+    ax.set_ylabel("$x_2$")
+
+    # Black circle for domain boundary
+    ax.add_patch(
+        plt.Circle(
+            (0, 0),
+            domain_radius,
+            fill=False,
+            color="black",
+            linestyle="-",
+            linewidth=2,
+        )
+    )
+
+    return fig, ax
+
+
+def plot_isotropic_conductivity(
+    conductivity_func,
+    title="Isotropic Conductivity",
+    n_points=500,
+):
+    """
+    Plot the scalar conductivity for an isotropic distribution.
+    Assumes conductivity_func returns (a11, a12, a22) where a11 = a22 and a12 = 0,
+    or returns a single scalar value.
+    """
+
+    domain_radius = 1.0
+
+    # Grid setup
+    xi = np.linspace(-domain_radius, domain_radius, n_points)
+    yi = np.linspace(-domain_radius, domain_radius, n_points)
+    X, Y = np.meshgrid(xi, yi)
+
+    sigma_grid = np.full_like(X, np.nan)
+
+    # Compute conductivity values
+    for i in range(X.shape[0]):
+        for j in range(X.shape[1]):
+            x_val, y_val = X[i, j], Y[i, j]
+            if np.sqrt(x_val**2 + y_val**2) <= domain_radius:
+                val = conductivity_func(x_val, y_val)
+
+                # Handle both tensor return (a11, a12, a22) and scalar return
+                if isinstance(val, (tuple, list, np.ndarray)):
+                    sigma = val[0]  # Use a11 as the conductivity
+                else:
+                    sigma = val
+
+                sigma_grid[i, j] = sigma
+
+    # Determine scale
+    v_min = np.nanmin(sigma_grid)
+    v_max = np.nanmax(sigma_grid)
+
+    # Setup Plot
+    fig, ax = plt.subplots(figsize=(6, 5), constrained_layout=True)
+
+    im = ax.imshow(
+        sigma_grid,
+        extent=[-domain_radius, domain_radius, -domain_radius, domain_radius],
+        origin="lower",
+        cmap="viridis",
+        vmin=v_min,
+        vmax=v_max,
+        aspect="equal",
+    )
+
+    ax.set_title(title, fontsize=14)
+    ax.set_xlabel("$x_1$")
+    ax.set_ylabel("$x_2$")
+
+    # Black circle for visibility of the boundary
+    ax.add_patch(
+        plt.Circle(
+            (0, 0),
+            domain_radius,
+            fill=False,
+            color="black",
+            linestyle="-",
+            linewidth=1,
+        )
+    )
+
+    # Add Colorbar
+    cbar = fig.colorbar(im, ax=ax, shrink=0.8)
+    cbar.set_label("Conductivity value")
+
+    return fig, ax
+
+
 def plot_conductivity_components(
     conductivity_func,
     title="Conductivity Tensors",
@@ -192,8 +349,8 @@ def plot_conductivity_components(
             aspect="equal",
         )
         ax.set_title(f"{label}")
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
+        ax.set_xlabel("$x_1$")
+        ax.set_ylabel("$x_2$")
 
         # Black circle for visibility
         ax.add_patch(
@@ -324,7 +481,7 @@ def plot_highlighted_eigenvalues(mesh, element_indices, eigenvalue_dict):
     vmin, vmax = np.min(vals[element_indices]), np.max(vals[element_indices])
 
     # Use inverted magma colormap (Low=White, High=Black/Dark)
-    cmap = plt.cm.magma_r
+    cmap = plt.cm.summer_r
 
     # Highlight the specified elements
     for element_index in element_indices:
@@ -380,12 +537,19 @@ def plot_inclusion_reconstruction_error(
     alphas, reconstruction_measures, alpha_optim=None, alpha_alt=None
 ):
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(alphas, reconstruction_measures, "-", linewidth=2, markersize=6)
+    ax.plot(
+        alphas,
+        reconstruction_measures,
+        color="tab:blue",
+        linestyle="-",
+        linewidth=2,
+        markersize=6,
+    )
 
     if alpha_optim is not None:
         ax.axvline(
             x=alpha_optim,
-            color="red",
+            color="tab:green",
             linestyle="--",
             label=f"Optimal alpha = {alpha_optim:.6e}",
         )
@@ -394,7 +558,7 @@ def plot_inclusion_reconstruction_error(
     if alpha_alt is not None:
         ax.axvline(
             x=alpha_alt,
-            color="blue",
+            color="tab:red",
             linestyle="--",
             label=f"Sub-optimal alpha = {alpha_alt:.6e}",
         )

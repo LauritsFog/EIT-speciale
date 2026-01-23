@@ -29,7 +29,7 @@ def is_inside_smiley(x, y, params=None):
     0: Background
     """
     # Right eye: Ellipse
-    ellipse_center_x, ellipse_center_y = 0.35, 0.3
+    ellipse_center_x, ellipse_center_y = 0.34, 0.32
     ellipse_axes = (0.3, 0.25)
     if (
         (x - ellipse_center_x) ** 2 / ellipse_axes[0] ** 2
@@ -43,7 +43,7 @@ def is_inside_smiley(x, y, params=None):
         return 2
 
     # Mouth: Lower half of ellipse
-    mouth_center_x, mouth_center_y = -0.1, -0.35
+    mouth_center_x, mouth_center_y = -0.25, -0.37
 
     if (
         (x - mouth_center_x) ** 2 / 0.5**2 + (y - mouth_center_y) ** 2 / 0.3**2

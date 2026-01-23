@@ -4,13 +4,9 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import LinearSegmentedColormap
 
+
 def compute_reconstruction_test_values_partial(
-    mesh,
-    gradients,
-    ntd_AD,
-    ntd_A0,
-    rho,
-    element_list
+    mesh, gradients, ntd_AD, ntd_A0, rho, element_list
 ):
     """
     Compute inclusion indices by processing mesh partitions sequentially.
@@ -31,7 +27,7 @@ def compute_reconstruction_test_values_partial(
     else:
         frechet_mode_sample_idx = 0
 
-    print(f"Sampling Frechet quantity at mode index {frechet_mode_sample_idx}")
+    # print(f"Sampling Frechet quantity at mode index {frechet_mode_sample_idx}")
 
     for elem in element_list:
         if elem % 500 == 0:
@@ -73,15 +69,15 @@ def compute_reconstruction_test_values_partial(
 
 
 def reconstruction2(
-        mesh,
-        gradients,
-        ntd_AD,
-        ntd_A0,
-        alpha,
-        rho0,
-        rho_step,
-        max_it = 100,
-        minimum_inclusions = 1
+    mesh,
+    gradients,
+    ntd_AD,
+    ntd_A0,
+    alpha,
+    rho0,
+    rho_step,
+    max_it=100,
+    minimum_inclusions=1,
 ):
     # list of element indices
     tdim = mesh.topology.dim
@@ -93,19 +89,20 @@ def reconstruction2(
     done = False
 
     for it in range(max_it):
+        # print(
+        #     f"Iteration {it + 1}, rho = {rho:.4f}, active elements: {len(active_elements)}"
+        # )
+
         ev_dict, _ = compute_reconstruction_test_values_partial(
-        mesh,
-        gradients,
-        ntd_AD,
-        ntd_A0,
-        rho,
-        active_elements)
+            mesh, gradients, ntd_AD, ntd_A0, rho, active_elements
+        )
 
         inclusion_indices = reconstruct_inclusions(ev_dict, alpha)
         if len(inclusion_indices) < minimum_inclusions:
+            print(f"Total iterations: {it + 1}")
             done = True
             break
-        
+
         # update counter
         inclusion_counter[inclusion_indices] += 1
 
@@ -117,21 +114,19 @@ def reconstruction2(
 
     if not done:
         print("Warning: Maximum iterations reached without convergence.")
-    
+
     return inclusion_counter
 
 
 color_positions = [
-    (0.0, 'white'),      # 0% - white
-    (0.15, 'yellow'),    # 15% - yellow
-    (1.0, 'magenta')     # 100% - magenta
+    (0.0, "white"),  # 0% - white
+    (0.15, "yellow"),  # 15% - yellow
+    (1.0, "magenta"),  # 100% - magenta
 ]
-custom_cmap = LinearSegmentedColormap.from_list(
-    'positioned_cmap', 
-    color_positions
-)
+custom_cmap = LinearSegmentedColormap.from_list("positioned_cmap", color_positions)
 
-def plot_method_2(mesh, inclusion_counter,colormap=None):
+
+def plot_method_2(mesh, inclusion_counter, colormap=None):
     fig, ax = plt.subplots(figsize=(6, 6))
 
     # Plot the entire mesh
@@ -149,7 +144,7 @@ def plot_method_2(mesh, inclusion_counter,colormap=None):
         cmap = colormap
 
     inclusion_indexes = np.arange(len(inclusion_counter))
-    #inclusion_indexes = (np.where(inclusion_counter > 0)[0]).tolist()
+    # inclusion_indexes = (np.where(inclusion_counter > 0)[0]).tolist()
     norm_counter = inclusion_counter / np.max(inclusion_counter)
 
     for elem in inclusion_indexes:
@@ -161,11 +156,17 @@ def plot_method_2(mesh, inclusion_counter,colormap=None):
         )
         ax.add_patch(poly_highlight)
         poly = plt.Polygon(
-            vertices[highlight_cell][:, :2], fill=None, edgecolor="gray", alpha=0.3, linewidth=0.2
+            vertices[highlight_cell][:, :2],
+            fill=None,
+            edgecolor="gray",
+            alpha=0.3,
+            linewidth=0.2,
         )
         ax.add_patch(poly)
-    
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=np.max(inclusion_counter)))
+
+    sm = plt.cm.ScalarMappable(
+        cmap=cmap, norm=plt.Normalize(vmin=0, vmax=np.max(inclusion_counter))
+    )
     sm.set_array([])
     cbar = plt.colorbar(sm, ax=ax)
     cbar.set_label("Count", rotation=270, labelpad=15)
@@ -175,12 +176,12 @@ def plot_method_2(mesh, inclusion_counter,colormap=None):
     ax.autoscale_view()
 
     # set axis limits
-    ax.set_xlim(-1,1)
-    ax.set_ylim(-1,1)
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
 
-    plt.xlabel("x")
-    plt.ylabel("y")
+    plt.xlabel("$x_1$")
+    plt.ylabel("$x_2$")
 
-    ax.set_aspect('equal')
+    ax.set_aspect("equal")
 
     return fig, ax

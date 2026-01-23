@@ -528,7 +528,7 @@ class FemConductivitySolver:
         triang = tri.Triangulation(xvals, yvals, cells)
         fig, ax = plt.subplots(figsize=(6, 5))
 
-        cont = ax.tricontourf(triang, u_vals, levels=50, cmap="turbo")
+        cont = ax.tricontourf(triang, u_vals, levels=100, cmap="RdBu")
         ax.tricontour(triang, u_vals, levels=50, colors="k", linewidths=0.5)
         ax.set_xlabel("x")
         ax.set_ylabel("y")
@@ -664,6 +664,9 @@ class FemConductivitySolver:
         plt.tight_layout()
 
         return fig, axes
+
+    # def plot_target(self, inclusion_conductivity, background_conductivity, title="Target Inclusion Regions"):
+    #     """Plot the target inclusion regions based on positive definiteness"""
 
     def get_ordered_boundary_solution(self):
         """Extract and sort boundary solution by angle"""

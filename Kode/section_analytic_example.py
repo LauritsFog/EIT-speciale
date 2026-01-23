@@ -451,6 +451,8 @@ def exact_solution(x, y, n, r1, coeffs_AD, ks):
     return u_expr
 
 
+# %%
+
 ### Conductivity
 
 # Define geometry
@@ -487,13 +489,13 @@ k = ks_A0[1]  # Outer layer anisotropy
 
 noise_level = 0.0
 
-max_freq = 5
+max_freq = 15
 modes = range(1, max_freq + 1)
 
 # Eigenmode frequency
 n = 3
 
-h_array = [0.06, 0.04]  # , 0.02, 0.01, 0.005]
+h_array = [0.06, 0.04, 0.02, 0.01, 0.005]
 h_array = np.array(h_array)
 
 recon_h = 0.06
@@ -600,18 +602,9 @@ for i, cl in enumerate(h_array):
     ntd_AD, n_freqs = solver_AD.compute_ntd_map(max_freq=max_freq)
     ntd_A0, n_freqs = solver_A0.compute_ntd_map(max_freq=max_freq)
 
-    if noise_level > 0:
-        ntd_AD = add_noise(ntd_AD, noise_level=noise_level)
+    ntd_fem_eigenvalues_AD = np.diag(ntd_AD[max_freq:, max_freq:])
 
-        ntd_fem_eigenvalues_AD = get_sine_eigenvalues(ntd_AD, max_freq)
-
-        ntd_A0 = add_noise(ntd_A0, noise_level=noise_level)
-
-        ntd_fem_eigenvalues_A0 = get_sine_eigenvalues(ntd_A0, max_freq)
-    else:
-        ntd_fem_eigenvalues_AD = np.diag(ntd_AD[max_freq:, max_freq:])
-
-        ntd_fem_eigenvalues_A0 = np.diag(ntd_A0[max_freq:, max_freq:])
+    ntd_fem_eigenvalues_A0 = np.diag(ntd_A0[max_freq:, max_freq:])
 
     eigenval_errors_AD[:, i] = (
         ntd_exact_eigenvalues_AD - ntd_fem_eigenvalues_AD
@@ -649,6 +642,8 @@ for i, cl in enumerate(h_array):
 
 ### Plot FEM solution errors
 
+# %%
+
 c_AD, k_AD = estimate_convergence_rate(h_array, errors_AD.flatten())
 c_A0, k_A0 = estimate_convergence_rate(h_array, errors_A0.flatten())
 
@@ -671,13 +666,13 @@ ax.semilogy(
 )
 ax.semilogy(
     h_array,
-    (c_AD * 2 * h_array) ** (k_AD),
+    (c_AD * 1.5 * h_array) ** (k_AD),
     "k--",
     label=f"O($h^{{{round(k_AD, 1)}}}$)",
 )
 ax.semilogy(
     h_array,
-    (c_A0 * 5 * h_array) ** (k_A0),
+    (c_A0 * 3 * h_array) ** (k_A0),
     "k:",
     label=f"O($h^{{{round(k_A0, 1)}}}$)",
 )
@@ -720,7 +715,7 @@ ax.semilogy(
 )
 ax.semilogy(
     h_array,
-    (c_A0 * 10 * h_array) ** (k_A0),
+    (c_A0 * 12 * h_array) ** (k_A0),
     "k:",
     label=f"O($h^{{{round(k_A0, 1)}}}$)",
 )
@@ -753,7 +748,7 @@ for i in range(len(h_array)):
     )
 ax.semilogy(
     modes,
-    (c_AD * 100 * modes) ** (k_AD),
+    3 * c_AD * (modes) ** (k_AD),
     "k--",
     linewidth=2,
     markersize=4,
@@ -787,7 +782,7 @@ for i in range(len(h_array)):
     )
 ax.semilogy(
     modes,
-    (c_A0 * 100 * modes) ** (k_A0),
+    3 * c_A0 * (modes) ** (k_A0),
     "k--",
     linewidth=2,
     markersize=4,
@@ -830,7 +825,66 @@ ax.legend()
 
 # plt.savefig("Frechet_derivative_plot.pdf")
 
+### Plot Frechet eigenvalues along radial line for the finest mesh
+
+fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+for i in range(len(h_array)):
+    ax.semilogy(
+        radial_dist_lists[i],
+        np.abs(frechet_quantity_lists[i]),
+        "-",
+        label=f"Mesh size (h) = {h_array[i]}",
+    )
+ax.semilogy(
+    r,
+    radial_frechet_decay,
+    "k--",
+    label="O($r^{2kN-2}$)",
+)
+ax.set_xlabel("Radial distance from center ($r$)")
+ax.set_ylabel("Absolute value of N'th diagonal element (log scale)")
+ax.legend()
+ax.grid(True)
+
+plt.savefig("Figures/Analytic_example/Frechet_diagonal_radial_decay.pdf")
+
 ### Plot ND map eigenvalue decay
+
+# %%
+
+solver_AD.cleanup()
+
+cl = 0.025
+
+max_freq = 40
+modes = range(1, max_freq + 1)
+
+ntd_exact_eigenvalues_AD = []
+
+for mode in modes:
+    coeffs_temp = compute_solution_coefficients(r1, mode, polar_conductivities_AD)
+    (alpha1, beta1), (alpha2, beta2) = coeffs_temp
+
+    ntd_exact_eigenvalues_AD.append(alpha2 + beta2)
+
+
+solver_AD = FemConductivitySolver(mesh_characteristic_length=cl)
+solver_AD.set_conductivity(my_conductivity_AD, my_conductivity_A0)
+
+mesh = solver_AD.get_mesh()
+
+x = ufl.SpatialCoordinate(mesh)
+nc = ufl.cos(n * ufl.atan2(x[1], x[0]))
+
+solver_AD.assemble_system(neumann_cond=nc)
+solver_AD.solve_system()
+
+solver_AD.plot_exact_solution(u_exact_AD, title="")
+plt.savefig("Figures/Analytic_example/Exact_solution_analytic_example.pdf")
+
+ntd_AD, n_freqs = solver_AD.compute_ntd_map(max_freq=max_freq)
+
+ntd_fem_eigenvalues_AD = np.diag(ntd_AD[max_freq:, max_freq:])
 
 sine_modes = np.arange(1, max_freq + 1)
 
@@ -862,27 +916,6 @@ ax.legend()
 
 plt.savefig("Figures/Analytic_example/ND_eigenvalue_decay_AD.pdf")
 
-### Plot Frechet eigenvalues along radial line for the finest mesh
+# plt.show()
 
-fig, ax = plt.subplots(1, 1, figsize=(6, 4))
-for i in range(len(h_array)):
-    ax.semilogy(
-        radial_dist_lists[i],
-        np.abs(frechet_quantity_lists[i]),
-        "-",
-        label=f"Mesh size (h) = {h_array[i]}",
-    )
-ax.semilogy(
-    r,
-    radial_frechet_decay,
-    "k--",
-    label="O($r^{2kN-2}$)",
-)
-ax.set_xlabel("Radial distance from center ($r$)")
-ax.set_ylabel("Absolute value of N'th diagonal element (log scale)")
-ax.legend()
-ax.grid(True)
-
-plt.savefig("Figures/Analytic_example/Frechet_diagonal_radial_decay.pdf")
-
-plt.show()
+# %%

@@ -3,31 +3,36 @@ from scipy.spatial.distance import directed_hausdorff
 
 
 def add_noise(ntd_matrix, noise_level, seed=None):
-    np.random.seed(seed)
+    """
+    Adds noise using the component-wise relative method described by Garde et al.
 
-    def H_minus_half_norm(E):
-        E_mod = E.copy()
+    Parameters
+    ----------
+    ntd_matrix : np.ndarray
+        The noiseless Neumann-to-Dirichlet matrix (or voltage matrix).
+    noise_level : float
+        The standard deviation of the relative error (e.g., 5e-3 for 0.5%).
+    seed : int, optional
+        Random seed for reproducibility.
 
-        for i, j in np.ndindex(E.shape):
-            m = i - E.shape[0] // 2
-            n = j - E.shape[1] // 2
-            E_mod[i, j] = (
-                E_mod[i, j]
-                * (1 + abs(m) ** 2) ** (-0.25)
-                * (1 + abs(n) ** 2) ** (-0.25)
-            )  # (13.44) in inv prob book
+    Returns
+    -------
+    ntd_matrix_noise : np.ndarray
+        The symmetrized, noisy matrix.
+    """
+    if seed is not None:
+        np.random.seed(seed)
 
-        return np.linalg.norm(E_mod, ord=2)
+    # 1. Generate relative noise factors Y_ij ~ N(0, noise_level^2)
+    relative_noise = np.random.normal(loc=0.0, scale=noise_level, size=ntd_matrix.shape)
 
-    # Create noise matrix with N(0,1) entries
-    noise_matrix = np.random.normal(loc=0.0, scale=1.0, size=ntd_matrix.shape)
+    # 2. Apply noise component-wise: V_noisy = V + V * Y
+    # N_ij = V_ij * Y_ij
+    noise_component = ntd_matrix * relative_noise
+    ntd_matrix_temp = ntd_matrix + noise_component
 
-    noise_matrix = 0.5 * (noise_matrix + noise_matrix.T)
-
-    # noise_scaling = noise_level / H_minus_half_norm(noise_matrix)
-    noise_scaling = noise_level / np.linalg.norm(noise_matrix, ord=2)
-
-    ntd_matrix_noise = ntd_matrix + noise_scaling * noise_matrix
+    # 3. Symmetrize the result
+    ntd_matrix_noise = 0.5 * (ntd_matrix_temp + ntd_matrix_temp.T)
 
     return ntd_matrix_noise
 
@@ -110,7 +115,7 @@ def compute_reconstruction_test_values(
     else:
         frechet_mode_sample_idx = 0
 
-    print(f"Sampling Frechet quantity at mode index {frechet_mode_sample_idx}")
+    # print(f"Sampling Frechet quantity at mode index {frechet_mode_sample_idx}")
 
     for elem in range(num_elements):
         if elem % 500 == 0:
@@ -193,7 +198,7 @@ def compute_classification_error(mesh, target_indeces, recon_inclusion):
     target_set = set(target_indeces)
     reconstructed_set = set(recon_inclusion)
 
-    false_negatives = 1.7 * len(target_set - reconstructed_set)
+    false_negatives = 2 * len(target_set - reconstructed_set)
     false_positives = len(reconstructed_set - target_set)
 
     classification_error = false_negatives + false_positives
