@@ -37,6 +37,10 @@ seed = np.random.seed()
 characteristic_length = 0.005
 recon_h = 0.05
 
+delta_vals = [0, 1e-4, 5e-4, 1e-3]
+mu_2_vals = [1.1, 0.9]  # Positive vs negative alpha
+# alpha_large_vals = [0, 1e-3, 1e-3, 1e-3]
+
 max_freq = 10
 
 shape_choice = "smiley"
@@ -148,16 +152,25 @@ if len(recon_inclusion_optim) > 0:
 
 rho0 = 0.1
 rho_step = 0.5
-mu_2 = 1.1
-alpha_large = np.abs(mu_2 * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD))))
-# alpha_large = 1e-5
+# mu_2 = mu_2_vals[0]
+if np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD))) < 0:
+    mu_2 = mu_2_vals[0]
+else:
+    mu_2 = mu_2_vals[1]
+
+alpha_large = -mu_2 * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD)))
+# alpha_large = alpha_large_vals[0]
+
+print(f"Algo 2 mu: {mu_2}")
+print(f"Algo 2 alpha: {alpha_large}")
+
 inclusion_counter = reconstruction2(
     recon_mesh, gradients, ntd_AD, ntd_A0, alpha_large, rho0, rho_step, max_it=1000
 )
 
 fig, ax = plot_method_2(recon_mesh, inclusion_counter)
 plt.savefig(
-    "Figures/Regularization_parameter/Method_2_isotropic_recon_no_noise.pdf",
+    "Figures/Regularization_parameter/Method_2_recon_no_noise.pdf",
     bbox_inches="tight",
 )
 
@@ -166,7 +179,7 @@ plt.savefig(
 
 ### Reconstruction with noisy data
 
-delta = 1e-4
+delta = delta_vals[1]
 ntd_AD_noise = add_noise(ntd_AD, noise_level=delta, seed=seed)
 
 eigenvalue_dict_noise, _ = compute_reconstruction_test_values(
@@ -180,7 +193,7 @@ eigenvalue_dict_noise, _ = compute_reconstruction_test_values(
 recon_errors_reg = []
 alpha_regs = []
 
-mus = np.linspace(0.999, 1.0001, 1000)
+mus = np.linspace(0.99999, 1.0001, 1000)
 
 for mu in mus:
     alpha_reg = -mu * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
@@ -244,9 +257,17 @@ if len(recon_inclusion_reg) > 0:
 
 rho0 = 0.1
 rho_step = 0.5
-mu_2 = 1.1
-alpha_large = np.abs(mu_2 * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD))))
-# alpha_large = 1e-5
+# mu_2 = mu_2_vals[1]
+if np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise))) < 0:
+    mu_2 = mu_2_vals[0]
+else:
+    mu_2 = mu_2_vals[1]
+alpha_large = -mu_2 * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
+# alpha_large = alpha_large_vals[1]
+
+print(f"Algo 2 mu: {mu_2}")
+print(f"Algo 2 alpha: {alpha_large}")
+
 inclusion_counter = reconstruction2(
     recon_mesh,
     gradients,
@@ -260,13 +281,13 @@ inclusion_counter = reconstruction2(
 
 fig, ax = plot_method_2(recon_mesh, inclusion_counter)
 plt.savefig(
-    "Figures/Regularization_parameter/Method_2_isotropic_recon_noise.pdf",
+    "Figures/Regularization_parameter/Method_2_recon_noise.pdf",
     bbox_inches="tight",
 )
 
 # %% #######################################
 
-delta = 5e-4
+delta = delta_vals[2]
 ntd_AD_noise = add_noise(ntd_AD, noise_level=delta, seed=seed)
 
 eigenvalue_dict_noise, _ = compute_reconstruction_test_values(
@@ -280,7 +301,7 @@ eigenvalue_dict_noise, _ = compute_reconstruction_test_values(
 recon_errors_reg = []
 alpha_regs = []
 
-mus = np.linspace(1, 1.00005, 1000)
+mus = np.linspace(1, 1.000001, 1000)
 
 for mu in mus:
     alpha_reg = -mu * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
@@ -319,9 +340,17 @@ else:
 
 rho0 = 0.1
 rho_step = 0.5
-mu_2 = 1.1
-alpha_large = np.abs(mu_2 * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD))))
-# alpha_large = 1e-5
+# mu_2 = mu_2_vals[2]
+if np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise))) < 0:
+    mu_2 = mu_2_vals[0]
+else:
+    mu_2 = mu_2_vals[1]
+alpha_large = -mu_2 * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
+# alpha_large = alpha_large_vals[2]
+
+print(f"Algo 2 mu: {mu_2}")
+print(f"Algo 2 alpha: {alpha_large}")
+
 inclusion_counter = reconstruction2(
     recon_mesh,
     gradients,
@@ -335,13 +364,13 @@ inclusion_counter = reconstruction2(
 
 fig, ax = plot_method_2(recon_mesh, inclusion_counter)
 plt.savefig(
-    "Figures/Regularization_parameter/Method_2_isotropic_recon_more_noise.pdf",
+    "Figures/Regularization_parameter/Method_2_recon_more_noise.pdf",
     bbox_inches="tight",
 )
 
 # %% #######################################
 
-delta = 1e-3
+delta = delta_vals[3]
 ntd_AD_noise = add_noise(ntd_AD, noise_level=delta, seed=seed)
 
 eigenvalue_dict_noise, _ = compute_reconstruction_test_values(
@@ -395,9 +424,17 @@ else:
 
 rho0 = 0.1
 rho_step = 0.5
-mu_2 = 1.1
-alpha_large = np.abs(mu_2 * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD))))
-# alpha_large = 1e-5
+# mu_2 = mu_2_vals[3]
+if np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise))) < 0:
+    mu_2 = mu_2_vals[0]
+else:
+    mu_2 = mu_2_vals[1]
+alpha_large = -mu_2 * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
+
+print(f"Algo 2 mu: {mu_2}")
+print(f"Algo 2 alpha: {alpha_large}")
+
+# alpha_large = alpha_large_vals[3]
 inclusion_counter = reconstruction2(
     recon_mesh,
     gradients,
@@ -411,6 +448,8 @@ inclusion_counter = reconstruction2(
 
 fig, ax = plot_method_2(recon_mesh, inclusion_counter)
 plt.savefig(
-    "Figures/Regularization_parameter/Method_2_isotropic_recon_much_more_noise.pdf",
+    "Figures/Regularization_parameter/Method_2_recon_much_more_noise.pdf",
     bbox_inches="tight",
 )
+
+# %%

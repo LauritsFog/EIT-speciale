@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.colors as mcolors
+from matplotlib.colors import LinearSegmentedColormap
 
 
 def plot_ND_map(
@@ -481,7 +482,18 @@ def plot_highlighted_eigenvalues(mesh, element_indices, eigenvalue_dict):
     vmin, vmax = np.min(vals[element_indices]), np.max(vals[element_indices])
 
     # Use inverted magma colormap (Low=White, High=Black/Dark)
-    cmap = plt.cm.summer_r
+    # cmap = plt.cm.summer_r
+    cmap = plt.cm.winter_r
+
+    n_colors = 256
+    x = np.linspace(0, 1, n_colors)
+    shifted_x = np.power(x, 2)
+
+    # 3. Sample the original colormap at these new positions
+    new_colors = cmap(shifted_x)
+
+    # 4. Create a new LinearSegmentedColormap
+    cmap = LinearSegmentedColormap.from_list("winter_r_shifted", new_colors)
 
     # Highlight the specified elements
     for element_index in element_indices:
