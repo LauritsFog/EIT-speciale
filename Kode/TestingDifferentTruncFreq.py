@@ -74,6 +74,9 @@ c, alpha, beta = solverAD.set_conductivity(AD_fun, A0_fun)
 
 print(f"c = {c}, alpha = {alpha}, beta = {beta}")
 
+opt_mu_vals = []
+opt_alpha_vals = []
+
 for max_freq in max_freq_vals:
     solverA0.compute_ntd_map(max_freq=max_freq)
     solverAD.compute_ntd_map(max_freq=max_freq)
@@ -125,14 +128,8 @@ for max_freq in max_freq_vals:
     optim_alpha_idx = np.argmin(recon_errors_reg)
     optim_alpha = alpha_regs[optim_alpha_idx]
 
-    idx_diff = 300
-    if optim_alpha_idx - idx_diff >= 0:
-        sub_optim_alpha = alpha_regs[optim_alpha_idx - idx_diff]
-    else:
-        sub_optim_alpha = alpha_regs[0]
-
-    print(f"Optimal mu without noise: {mus[optim_alpha_idx]}")
-    print(f"Optimal alpha without noise: {optim_alpha}")
+    opt_mu_vals.append(mus[optim_alpha_idx])
+    opt_alpha_vals.append(optim_alpha)
 
     recon_inclusion_optim = reconstruct_inclusions(
         eigenvalue_dict, alpha_reg=optim_alpha
@@ -141,7 +138,9 @@ for max_freq in max_freq_vals:
     if len(recon_inclusion_optim) > 0:
         plot_highlighted_eigenvalues(recon_mesh, recon_inclusion_optim, eigenvalue_dict)
 
-        plt.savefig("Figures/Regularization_parameter/Optimal_alpha_recon_no_noise.pdf")
+        plt.savefig(
+            f"Figures/Regularization_parameter/Optimal_alpha_recon_trunc_{max_freq}.pdf"
+        )
 
     rho0 = 0.1
     rho_step = 0.5
@@ -162,6 +161,10 @@ for max_freq in max_freq_vals:
 
     fig, ax = plot_method_2(recon_mesh, inclusion_counter)
     plt.savefig(
-        "Figures/Regularization_parameter/Method_2_isotropic_recon_no_noise.pdf",
+        f"Figures/Regularization_parameter/Method_2_trunc_{max_freq}.pdf",
         bbox_inches="tight",
     )
+
+
+print(f"Optimal mu without noise: {opt_mu_vals}")
+print(f"Optimal alpha without noise: {opt_alpha_vals}")
