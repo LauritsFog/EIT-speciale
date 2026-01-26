@@ -32,16 +32,29 @@ from reconstruction_method_2 import *
 # LambdaAD - LambdaA0 - DLambda(A0;c(alpha/beta)^2 I) <= 0
 
 
-seed = np.random.seed()
+seed = np.random.seed(42)
 
 characteristic_length = 0.005
 recon_h = 0.05
 
 delta_vals = [0, 1e-4, 5e-4, 1e-3]
-mu_2_vals = [1.1, 0.9]  # Positive vs negative alpha
+mu_2_vals = [1.05, 0.95]  # Positive vs negative alpha
 # alpha_large_vals = [0, 1e-3, 1e-3, 1e-3]
 
 max_freq = 10
+max_freq_algo_2 = 10  # Larger truncation frequency for algo 2
+
+mus_neg = np.linspace(1, 1.0000001, 1000)
+mus_pos = np.linspace(0.9999999, 1, 1000)
+
+algo_1_idx = [(max_freq_algo_2 - max_freq), (max_freq_algo_2 + max_freq)]
+
+opt_mu_vals = []
+opt_alpha_vals = []
+alpha_large_vals = []
+mu_2_choices = []
+
+idx_diff = 300
 
 shape_choice = "smiley"
 
@@ -78,8 +91,8 @@ c, alpha, beta = solverAD.set_conductivity(AD_fun, A0_fun)
 
 print(f"c = {c}, alpha = {alpha}, beta = {beta}")
 
-solverA0.compute_ntd_map(max_freq=max_freq)
-solverAD.compute_ntd_map(max_freq=max_freq)
+solverA0.compute_ntd_map(max_freq=max_freq_algo_2)
+solverAD.compute_ntd_map(max_freq=max_freq_algo_2)
 
 recon_basis_solutions = interpolate_solutions_to_new_mesh(solverA0, recon_solver)
 
@@ -96,13 +109,15 @@ plt.savefig("Figures/Regularization_parameter/Conductivity_AD.pdf")
 
 gradients = precompute_gradients(recon_basis_solutions, recon_mesh)
 
+# %% #######################################
+
 ### Reconstruction without noisy data
 
 eigenvalue_dict, _ = compute_reconstruction_test_values(
     mesh=recon_mesh,
-    gradients=gradients,
-    ntd_AD=ntd_AD,
-    ntd_A0=ntd_A0,
+    gradients=gradients[algo_1_idx[0] : algo_1_idx[1]],
+    ntd_AD=ntd_AD[algo_1_idx[0] : algo_1_idx[1], algo_1_idx[0] : algo_1_idx[1]],
+    ntd_A0=ntd_A0[algo_1_idx[0] : algo_1_idx[1], algo_1_idx[0] : algo_1_idx[1]],
     rho=rho,
 )
 
@@ -112,12 +127,13 @@ target_inclusion = recon_solver.get_target_inclusion_indeces()
 
 # plt.savefig("Figures/Regularization_parameter/Target_inclusion_more_noise.pdf")
 
-# %% #######################################
-
 recon_errors_reg = []
 alpha_regs = []
 
-mus = np.linspace(0.9999, 0.9999999, 1000)
+if np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD))) < 0:
+    mus = mus_neg
+else:
+    mus = mus_pos
 
 for mu in mus:
     alpha_reg = -mu * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD)))
@@ -133,15 +149,6 @@ for mu in mus:
 
 optim_alpha_idx = np.argmin(recon_errors_reg)
 optim_alpha = alpha_regs[optim_alpha_idx]
-
-idx_diff = 300
-if optim_alpha_idx - idx_diff >= 0:
-    sub_optim_alpha = alpha_regs[optim_alpha_idx - idx_diff]
-else:
-    sub_optim_alpha = alpha_regs[0]
-
-print(f"Optimal mu without noise: {mus[optim_alpha_idx]}")
-print(f"Optimal alpha without noise: {optim_alpha}")
 
 recon_inclusion_optim = reconstruct_inclusions(eigenvalue_dict, alpha_reg=optim_alpha)
 
@@ -161,8 +168,10 @@ else:
 alpha_large = -mu_2 * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD)))
 # alpha_large = alpha_large_vals[0]
 
-print(f"Algo 2 mu: {mu_2}")
-print(f"Algo 2 alpha: {alpha_large}")
+opt_mu_vals.append(mus[optim_alpha_idx])
+opt_alpha_vals.append(optim_alpha)
+alpha_large_vals.append(alpha_large)
+mu_2_choices.append(mu_2)
 
 inclusion_counter = reconstruction2(
     recon_mesh, gradients, ntd_AD, ntd_A0, alpha_large, rho0, rho_step, max_it=1000
@@ -184,16 +193,19 @@ ntd_AD_noise = add_noise(ntd_AD, noise_level=delta, seed=seed)
 
 eigenvalue_dict_noise, _ = compute_reconstruction_test_values(
     mesh=recon_mesh,
-    gradients=gradients,
-    ntd_AD=ntd_AD_noise,
-    ntd_A0=ntd_A0,
+    gradients=gradients[algo_1_idx[0] : algo_1_idx[1]],
+    ntd_AD=ntd_AD_noise[algo_1_idx[0] : algo_1_idx[1], algo_1_idx[0] : algo_1_idx[1]],
+    ntd_A0=ntd_A0[algo_1_idx[0] : algo_1_idx[1], algo_1_idx[0] : algo_1_idx[1]],
     rho=rho,
 )
 
 recon_errors_reg = []
 alpha_regs = []
 
-mus = np.linspace(0.99999, 1.0001, 1000)
+if np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise))) < 0:
+    mus = mus_neg
+else:
+    mus = mus_pos
 
 for mu in mus:
     alpha_reg = -mu * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
@@ -265,8 +277,10 @@ else:
 alpha_large = -mu_2 * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
 # alpha_large = alpha_large_vals[1]
 
-print(f"Algo 2 mu: {mu_2}")
-print(f"Algo 2 alpha: {alpha_large}")
+opt_mu_vals.append(mus[optim_alpha_idx])
+opt_alpha_vals.append(optim_alpha)
+alpha_large_vals.append(alpha_large)
+mu_2_choices.append(mu_2)
 
 inclusion_counter = reconstruction2(
     recon_mesh,
@@ -292,16 +306,20 @@ ntd_AD_noise = add_noise(ntd_AD, noise_level=delta, seed=seed)
 
 eigenvalue_dict_noise, _ = compute_reconstruction_test_values(
     mesh=recon_mesh,
-    gradients=gradients,
-    ntd_AD=ntd_AD_noise,
-    ntd_A0=ntd_A0,
+    gradients=gradients[algo_1_idx[0] : algo_1_idx[1]],
+    ntd_AD=ntd_AD_noise[algo_1_idx[0] : algo_1_idx[1], algo_1_idx[0] : algo_1_idx[1]],
+    ntd_A0=ntd_A0[algo_1_idx[0] : algo_1_idx[1], algo_1_idx[0] : algo_1_idx[1]],
     rho=rho,
 )
 
 recon_errors_reg = []
 alpha_regs = []
 
-mus = np.linspace(1, 1.000001, 1000)
+# mus = np.linspace(1, 1.000001, 1000)
+if np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise))) < 0:
+    mus = mus_neg
+else:
+    mus = mus_pos
 
 for mu in mus:
     alpha_reg = -mu * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
@@ -319,9 +337,6 @@ for mu in mus:
 
 optim_alpha_idx = np.argmin(recon_errors_reg)
 optim_alpha = alpha_regs[optim_alpha_idx]
-
-print(f"Optimal mu with noise: {mus[optim_alpha_idx]}")
-print(f"Optimal alpha with noise: {optim_alpha}")
 
 recon_inclusion_optim = reconstruct_inclusions(
     eigenvalue_dict_noise, alpha_reg=optim_alpha
@@ -348,8 +363,10 @@ else:
 alpha_large = -mu_2 * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
 # alpha_large = alpha_large_vals[2]
 
-print(f"Algo 2 mu: {mu_2}")
-print(f"Algo 2 alpha: {alpha_large}")
+opt_mu_vals.append(mus[optim_alpha_idx])
+opt_alpha_vals.append(optim_alpha)
+alpha_large_vals.append(alpha_large)
+mu_2_choices.append(mu_2)
 
 inclusion_counter = reconstruction2(
     recon_mesh,
@@ -375,17 +392,20 @@ ntd_AD_noise = add_noise(ntd_AD, noise_level=delta, seed=seed)
 
 eigenvalue_dict_noise, _ = compute_reconstruction_test_values(
     mesh=recon_mesh,
-    gradients=gradients,
-    ntd_AD=ntd_AD_noise,
-    ntd_A0=ntd_A0,
+    gradients=gradients[algo_1_idx[0] : algo_1_idx[1]],
+    ntd_AD=ntd_AD_noise[algo_1_idx[0] : algo_1_idx[1], algo_1_idx[0] : algo_1_idx[1]],
+    ntd_A0=ntd_A0[algo_1_idx[0] : algo_1_idx[1], algo_1_idx[0] : algo_1_idx[1]],
     rho=rho,
 )
 
 recon_errors_reg = []
 alpha_regs = []
 
-mus = np.linspace(1.00000001, 1.00009, 1000)
-# mus = np.linspace(0.9995, 1.0000, 1000)
+# mus = np.linspace(1.00000001, 1.00009, 1000)
+if np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise))) < 0:
+    mus = mus_neg
+else:
+    mus = mus_pos
 
 for mu in mus:
     alpha_reg = -mu * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
@@ -403,9 +423,6 @@ for mu in mus:
 
 optim_alpha_idx = np.argmin(recon_errors_reg)
 optim_alpha = alpha_regs[optim_alpha_idx]
-
-print(f"Optimal mu with noise: {mus[optim_alpha_idx]}")
-print(f"Optimal alpha with noise: {optim_alpha}")
 
 recon_inclusion_optim = reconstruct_inclusions(
     eigenvalue_dict_noise, alpha_reg=optim_alpha
@@ -431,8 +448,10 @@ else:
     mu_2 = mu_2_vals[1]
 alpha_large = -mu_2 * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
 
-print(f"Algo 2 mu: {mu_2}")
-print(f"Algo 2 alpha: {alpha_large}")
+opt_mu_vals.append(mus[optim_alpha_idx])
+opt_alpha_vals.append(optim_alpha)
+alpha_large_vals.append(alpha_large)
+mu_2_choices.append(mu_2)
 
 # alpha_large = alpha_large_vals[3]
 inclusion_counter = reconstruction2(
@@ -451,5 +470,10 @@ plt.savefig(
     "Figures/Regularization_parameter/Method_2_recon_much_more_noise.pdf",
     bbox_inches="tight",
 )
+
+print(f"Opt mus {opt_mu_vals}")
+print(f"Opt alphas {opt_alpha_vals}")
+print(f"mu 2 {mu_2_choices}")
+print(f"alpha large {alpha_large_vals}")
 
 # %%

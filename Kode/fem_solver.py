@@ -530,11 +530,11 @@ class FemConductivitySolver:
 
         cont = ax.tricontourf(triang, u_vals, levels=100, cmap="RdBu")
         ax.tricontour(triang, u_vals, levels=50, colors="k", linewidths=0.5)
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
+        ax.set_xlabel("$x_1$")
+        ax.set_ylabel("$x_2$")
         ax.set_title(title)
         ax.axis("equal")
-        fig.colorbar(cont, ax=ax, label="u_exact")
+        fig.colorbar(cont, ax=ax, label="u")
 
         return fig, ax
 

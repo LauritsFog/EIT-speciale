@@ -35,7 +35,7 @@ seed = np.random.seed()
 characteristic_length = 0.01
 recon_h = 0.05
 
-mu_2_vals = [1.1, 0.9]  # Positive vs negative alpha
+mu_2_vals = [1.01, 0.99]  # Positive vs negative alpha
 
 max_freq_vals = [5, 10, 15, 20]
 

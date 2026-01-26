@@ -495,7 +495,7 @@ modes = range(1, max_freq + 1)
 # Eigenmode frequency
 n = 3
 
-h_array = [0.06, 0.04, 0.02, 0.01, 0.005]
+h_array = [0.06]  # , 0.04, 0.02, 0.01, 0.005]
 h_array = np.array(h_array)
 
 recon_h = 0.06
@@ -535,7 +535,7 @@ coeffs_A0 = compute_solution_coefficients(r1, n, polar_conductivities_A0)
 
 # Visualization
 fig, axes = plot_conductivity_components(my_conductivity_AD, title="")
-plt.savefig("Figures/Analytic_example/Conductivity_distribution_analytic_example.pdf")
+# plt.savefig("Figures/Analytic_example/Conductivity_distribution_analytic_example.pdf")
 
 
 def u_exact_AD(x, y):
@@ -680,7 +680,7 @@ ax.set_xlabel("Mesh size (h)")
 ax.set_ylabel("$H^1$-error (log scale)")
 ax.grid(True, which="both", linestyle="--", alpha=0.7)
 ax.legend()
-plt.savefig("Figures/Analytic_example/FEM_solution_error_convergence.pdf")
+# plt.savefig("Figures/Analytic_example/FEM_solution_error_convergence.pdf")
 
 ### Plot smallest eigenvalue errors
 
@@ -723,7 +723,7 @@ ax.set_xlabel("Mesh size (h)")
 ax.set_ylabel("Absolute error (log scale)")
 ax.grid(True, which="both", linestyle="--", alpha=0.7)
 ax.legend()
-plt.savefig("Figures/Analytic_example/ND_map_smallest_eigenvalue_error_convergence.pdf")
+# plt.savefig("Figures/Analytic_example/ND_map_smallest_eigenvalue_error_convergence.pdf")
 
 ### Plot eigenvalue error for each mode
 
@@ -759,7 +759,7 @@ ax.set_ylabel("Absolute relative error (Log Scale)")
 ax.grid(True, which="both", ls="--")
 ax.legend()
 
-plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_AD.pdf")
+# plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_AD.pdf")
 
 idx_start = 8
 c_A0, k_A0 = estimate_convergence_rate(
@@ -793,7 +793,7 @@ ax.set_ylabel("Absolute relative error (Log Scale)")
 ax.grid(True, which="both", ls="--")
 ax.legend()
 
-plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_A0.pdf")
+# plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_A0.pdf")
 
 ### Plot signed eigenvalue error for each mode
 
@@ -815,7 +815,7 @@ ax.set_ylabel("Signed relative error")
 ax.grid(True, which="both", ls="--")
 ax.legend()
 
-# plt.savefig("ND_eigenvalue_signed_relative_error.pdf")
+# # plt.savefig("ND_eigenvalue_signed_relative_error.pdf")
 
 ### Plot frechet matrix eigenvalues
 
@@ -823,7 +823,7 @@ ax.legend()
 #     mesh, frechet_quantity, title="N'th diagonal element of the Frechet derivative"
 # )
 
-# plt.savefig("Frechet_derivative_plot.pdf")
+# # plt.savefig("Frechet_derivative_plot.pdf")
 
 ### Plot Frechet eigenvalues along radial line for the finest mesh
 
@@ -846,7 +846,7 @@ ax.set_ylabel("Absolute value of N'th diagonal element (log scale)")
 ax.legend()
 ax.grid(True)
 
-plt.savefig("Figures/Analytic_example/Frechet_diagonal_radial_decay.pdf")
+# plt.savefig("Figures/Analytic_example/Frechet_diagonal_radial_decay.pdf")
 
 ### Plot ND map eigenvalue decay
 
@@ -914,7 +914,7 @@ ax.set_ylabel("Eigenvalue magnitude")
 ax.grid(True, which="both", ls="--")
 ax.legend()
 
-plt.savefig("Figures/Analytic_example/ND_eigenvalue_decay_AD.pdf")
+# plt.savefig("Figures/Analytic_example/ND_eigenvalue_decay_AD.pdf")
 
 # plt.show()
 
