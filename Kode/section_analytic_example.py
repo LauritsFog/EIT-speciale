@@ -495,7 +495,7 @@ modes = range(1, max_freq + 1)
 # Eigenmode frequency
 n = 3
 
-h_array = [0.06]  # , 0.04, 0.02, 0.01, 0.005]
+h_array = [0.06, 0.04, 0.02, 0.01, 0.005]
 h_array = np.array(h_array)
 
 recon_h = 0.06
@@ -507,10 +507,6 @@ eigenvalue_error_scaling = (h_array[0] * np.array(modes)) ** 2
 # Frechet quantity decay (must be smaller that max_freq)
 frechet_diag_mode = 8
 r = np.linspace(0, 1, 100)
-
-radial_frechet_decay = (h_array[-1] ** 2) * (
-    np.abs(r) ** (k * 2 * frechet_diag_mode - 2)
-)
 
 # Check inner most layer (layer 3) first.
 my_conductivity_A0 = lambda x, y: polar_to_euclidean(polar_conductivities_AD[1], x, y)
@@ -535,7 +531,7 @@ coeffs_A0 = compute_solution_coefficients(r1, n, polar_conductivities_A0)
 
 # Visualization
 fig, axes = plot_conductivity_components(my_conductivity_AD, title="")
-# plt.savefig("Figures/Analytic_example/Conductivity_distribution_analytic_example.pdf")
+plt.savefig("Figures/Analytic_example/Conductivity_distribution_analytic_example.pdf")
 
 
 def u_exact_AD(x, y):
@@ -608,11 +604,11 @@ for i, cl in enumerate(h_array):
 
     eigenval_errors_AD[:, i] = (
         ntd_exact_eigenvalues_AD - ntd_fem_eigenvalues_AD
-    )  # / np.abs(ntd_exact_eigenvalues_AD)
+    ) / np.abs(ntd_exact_eigenvalues_AD)
 
     eigenval_errors_A0[:, i] = (
         ntd_exact_eigenvalues_A0 - ntd_fem_eigenvalues_A0
-    )  # / np.abs(ntd_exact_eigenvalues_A0)
+    ) / np.abs(ntd_exact_eigenvalues_A0)
 
     recon_basis_solutions = interpolate_solutions_to_new_mesh(solver_A0, recon_solver)
 
@@ -644,6 +640,8 @@ for i, cl in enumerate(h_array):
 
 # %%
 
+radial_frechet_decay = (h_array[-1] ** 2) * (np.abs(r) ** (k * 2 * frechet_diag_mode))
+
 c_AD, k_AD = estimate_convergence_rate(h_array, errors_AD.flatten())
 c_A0, k_A0 = estimate_convergence_rate(h_array, errors_A0.flatten())
 
@@ -666,13 +664,13 @@ ax.semilogy(
 )
 ax.semilogy(
     h_array,
-    (c_AD * 1.5 * h_array) ** (k_AD),
+    (c_AD * h_array) ** (k_AD),
     "k--",
     label=f"O($h^{{{round(k_AD, 1)}}}$)",
 )
 ax.semilogy(
     h_array,
-    (c_A0 * 3 * h_array) ** (k_A0),
+    (c_A0 * 1.18 * h_array) ** (k_A0),
     "k:",
     label=f"O($h^{{{round(k_A0, 1)}}}$)",
 )
@@ -680,7 +678,7 @@ ax.set_xlabel("Mesh size (h)")
 ax.set_ylabel("$H^1$-error (log scale)")
 ax.grid(True, which="both", linestyle="--", alpha=0.7)
 ax.legend()
-# plt.savefig("Figures/Analytic_example/FEM_solution_error_convergence.pdf")
+plt.savefig("Figures/Analytic_example/FEM_solution_error_convergence.pdf")
 
 ### Plot smallest eigenvalue errors
 
@@ -709,29 +707,29 @@ ax.semilogy(
 )
 ax.semilogy(
     h_array,
-    (c_AD * 5 * h_array) ** (k_AD),
+    (c_AD * 3 * h_array) ** (k_AD),
     "k--",
     label=f"O($h^{{{round(k_AD, 1)}}}$)",
 )
 ax.semilogy(
     h_array,
-    (c_A0 * 12 * h_array) ** (k_A0),
+    (c_A0 * 8 * h_array) ** (k_A0),
     "k:",
     label=f"O($h^{{{round(k_A0, 1)}}}$)",
 )
 ax.set_xlabel("Mesh size (h)")
-ax.set_ylabel("Absolute error (log scale)")
+ax.set_ylabel("Absolute relative error (log scale)")
 ax.grid(True, which="both", linestyle="--", alpha=0.7)
 ax.legend()
-# plt.savefig("Figures/Analytic_example/ND_map_smallest_eigenvalue_error_convergence.pdf")
+plt.savefig("Figures/Analytic_example/ND_map_smallest_eigenvalue_error_convergence.pdf")
 
 ### Plot eigenvalue error for each mode
 
 idx_start = 8
 c_AD, k_AD = estimate_convergence_rate(
     modes[idx_start:],
-    np.abs(eigenval_errors_AD[idx_start:, 0])
-    / np.abs(ntd_exact_eigenvalues_AD[idx_start:]),
+    np.abs(eigenval_errors_AD[idx_start:, 0]),
+    # / np.abs(ntd_exact_eigenvalues_AD[idx_start:]),
 )
 
 fig, ax = plt.subplots(1, 1, figsize=(6, 4))
@@ -740,7 +738,7 @@ ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 for i in range(len(h_array)):
     ax.semilogy(
         modes,
-        np.abs(eigenval_errors_AD[:, i]) / np.abs(ntd_exact_eigenvalues_AD),
+        np.abs(eigenval_errors_AD[:, i]),  # / np.abs(ntd_exact_eigenvalues_AD),
         "o-",
         linewidth=2,
         markersize=4,
@@ -759,13 +757,13 @@ ax.set_ylabel("Absolute relative error (Log Scale)")
 ax.grid(True, which="both", ls="--")
 ax.legend()
 
-# plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_AD.pdf")
+plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_AD.pdf")
 
 idx_start = 8
 c_A0, k_A0 = estimate_convergence_rate(
     modes[idx_start:],
-    np.abs(eigenval_errors_A0[idx_start:, 0])
-    / np.abs(ntd_exact_eigenvalues_A0[idx_start:]),
+    np.abs(eigenval_errors_A0[idx_start:, 0]),
+    # / np.abs(ntd_exact_eigenvalues_A0[idx_start:]),
 )
 
 fig, ax = plt.subplots(1, 1, figsize=(6, 4))
@@ -774,7 +772,7 @@ ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 for i in range(len(h_array)):
     ax.semilogy(
         modes,
-        np.abs(eigenval_errors_A0[:, i]) / np.abs(ntd_exact_eigenvalues_A0),
+        np.abs(eigenval_errors_A0[:, i]),  # / np.abs(ntd_exact_eigenvalues_A0),
         "o-",
         linewidth=2,
         markersize=4,
@@ -793,7 +791,7 @@ ax.set_ylabel("Absolute relative error (Log Scale)")
 ax.grid(True, which="both", ls="--")
 ax.legend()
 
-# plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_A0.pdf")
+plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_A0.pdf")
 
 ### Plot signed eigenvalue error for each mode
 
@@ -815,7 +813,7 @@ ax.set_ylabel("Signed relative error")
 ax.grid(True, which="both", ls="--")
 ax.legend()
 
-# # plt.savefig("ND_eigenvalue_signed_relative_error.pdf")
+# plt.savefig("ND_eigenvalue_signed_relative_error.pdf")
 
 ### Plot frechet matrix eigenvalues
 
@@ -823,7 +821,7 @@ ax.legend()
 #     mesh, frechet_quantity, title="N'th diagonal element of the Frechet derivative"
 # )
 
-# # plt.savefig("Frechet_derivative_plot.pdf")
+# plt.savefig("Frechet_derivative_plot.pdf")
 
 ### Plot Frechet eigenvalues along radial line for the finest mesh
 
@@ -839,80 +837,80 @@ ax.semilogy(
     r,
     radial_frechet_decay,
     "k--",
-    label="O($r^{2kN-2}$)",
+    label="O($r^{2kN}$)",
 )
 ax.set_xlabel("Radial distance from center ($r$)")
 ax.set_ylabel("Absolute value of N'th diagonal element (log scale)")
 ax.legend()
 ax.grid(True)
 
-# plt.savefig("Figures/Analytic_example/Frechet_diagonal_radial_decay.pdf")
+plt.savefig("Figures/Analytic_example/Frechet_diagonal_radial_decay.pdf")
 
 ### Plot ND map eigenvalue decay
 
 # %%
 
-solver_AD.cleanup()
+# solver_AD.cleanup()
 
-cl = 0.025
+# cl = 0.025
 
-max_freq = 40
-modes = range(1, max_freq + 1)
+# max_freq = 40
+# modes = range(1, max_freq + 1)
 
-ntd_exact_eigenvalues_AD = []
+# ntd_exact_eigenvalues_AD = []
 
-for mode in modes:
-    coeffs_temp = compute_solution_coefficients(r1, mode, polar_conductivities_AD)
-    (alpha1, beta1), (alpha2, beta2) = coeffs_temp
+# for mode in modes:
+#     coeffs_temp = compute_solution_coefficients(r1, mode, polar_conductivities_AD)
+#     (alpha1, beta1), (alpha2, beta2) = coeffs_temp
 
-    ntd_exact_eigenvalues_AD.append(alpha2 + beta2)
+#     ntd_exact_eigenvalues_AD.append(alpha2 + beta2)
 
 
-solver_AD = FemConductivitySolver(mesh_characteristic_length=cl)
-solver_AD.set_conductivity(my_conductivity_AD, my_conductivity_A0)
+# solver_AD = FemConductivitySolver(mesh_characteristic_length=cl)
+# solver_AD.set_conductivity(my_conductivity_AD, my_conductivity_A0)
 
-mesh = solver_AD.get_mesh()
+# mesh = solver_AD.get_mesh()
 
-x = ufl.SpatialCoordinate(mesh)
-nc = ufl.cos(n * ufl.atan2(x[1], x[0]))
+# x = ufl.SpatialCoordinate(mesh)
+# nc = ufl.cos(n * ufl.atan2(x[1], x[0]))
 
-solver_AD.assemble_system(neumann_cond=nc)
-solver_AD.solve_system()
+# solver_AD.assemble_system(neumann_cond=nc)
+# solver_AD.solve_system()
 
-solver_AD.plot_exact_solution(u_exact_AD, title="")
-plt.savefig("Figures/Analytic_example/Exact_solution_analytic_example.pdf")
+# solver_AD.plot_exact_solution(u_exact_AD, title="")
+# plt.savefig("Figures/Analytic_example/Exact_solution_analytic_example.pdf")
 
-ntd_AD, n_freqs = solver_AD.compute_ntd_map(max_freq=max_freq)
+# ntd_AD, n_freqs = solver_AD.compute_ntd_map(max_freq=max_freq)
 
-ntd_fem_eigenvalues_AD = np.diag(ntd_AD[max_freq:, max_freq:])
+# ntd_fem_eigenvalues_AD = np.diag(ntd_AD[max_freq:, max_freq:])
 
-sine_modes = np.arange(1, max_freq + 1)
+# sine_modes = np.arange(1, max_freq + 1)
 
-decay_rate = (max(ntd_exact_eigenvalues_AD) + 1) / sine_modes
+# decay_rate = (max(ntd_exact_eigenvalues_AD) + 1) / sine_modes
 
-fig, ax = plt.subplots(1, 1, figsize=(6, 4))
-ax.semilogy(
-    sine_modes,
-    ntd_fem_eigenvalues_AD,
-    "-",
-    label="Numerical eigenvaluess",
-)
-ax.semilogy(
-    sine_modes,
-    ntd_exact_eigenvalues_AD,
-    "--",
-    label="Exact eigenvalues",
-)
-ax.semilogy(
-    sine_modes,
-    decay_rate,
-    "k--",
-    label="O($1/n$)",
-)
-ax.set_xlabel("Eigenvalue index ($n$)")
-ax.set_ylabel("Eigenvalue magnitude")
-ax.grid(True, which="both", ls="--")
-ax.legend()
+# fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+# ax.semilogy(
+#     sine_modes,
+#     ntd_fem_eigenvalues_AD,
+#     "-",
+#     label="Numerical eigenvaluess",
+# )
+# ax.semilogy(
+#     sine_modes,
+#     ntd_exact_eigenvalues_AD,
+#     "--",
+#     label="Exact eigenvalues",
+# )
+# ax.semilogy(
+#     sine_modes,
+#     decay_rate,
+#     "k--",
+#     label="O($1/n$)",
+# )
+# ax.set_xlabel("Eigenvalue index ($n$)")
+# ax.set_ylabel("Eigenvalue magnitude")
+# ax.grid(True, which="both", ls="--")
+# ax.legend()
 
 # plt.savefig("Figures/Analytic_example/ND_eigenvalue_decay_AD.pdf")
 

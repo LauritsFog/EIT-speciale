@@ -311,69 +311,52 @@ class FemConductivitySolver:
         self.uh.x.scatter_forward()
 
     def compute_error(self, exact_solution, norm_type="L2"):
-        """
-        Compute FEM error between u_h and exact_solution.
-
-        Parameters
-        ----------
-        exact_solution : callable or dolfinx.Function
-            The exact solution u_exact(x, y), either:
-            - a UFL function of (x[0], x[1]), or
-            - an already interpolated dolfinx.Function.
-        norm_type : str, optional
-            Type of norm to compute:
-            - "L2"  : compute the L²(Ω) error
-            - "Linf": compute the max-norm (discrete at mesh vertices)
-            - "H1"  : compute the H¹(Ω) error
-
-        Returns
-        -------
-        error_value : float
-            The computed error in the chosen norm.
-        """
         if self.uh is None:
             raise ValueError("Must solve the problem first")
 
+        # 1. Define the exact solution as a UFL expression
+        # Note: Do not interpolate this into self.V!
         x = ufl.SpatialCoordinate(self.mesh)
-
-        # 1. Interpolate Exact Solution
-        # Assuming self.V is the function space of the FEM solution (uh)
         u_exact_expr = exact_solution(x[0], x[1])
-        u_exact_fun = Function(self.V)
-        u_exact_fun.interpolate(
-            Expression(u_exact_expr, self.V.element.interpolation_points())
-        )
 
-        # 2. Compute difference field (e = uh - u_exact)
-        diff = Function(self.V)
-        diff.x.array[:] = self.uh.x.array - u_exact_fun.x.array
+        # 2. Define the difference directly in UFL
+        # u_exact_expr acts as an analytical function here
+        diff = self.uh - u_exact_expr
 
-        # 3. Choose norm type and assemble
+        # 3. Define the error form
+        degree = self.V.element.interpolation_points().shape[0]  # Estimate degree
+
+        # We need high-order quadrature to integrate the exact solution accurately
+        # typically degree + 2 or + 3 is sufficient
+        metadata = {"quadrature_degree": degree + 4}
+        dx_high = ufl.dx(metadata=metadata)
+
         if norm_type == "L2":
-            # ||e||_L2 = sqrt( Integral(e^2) )
-            error_form = form(ufl.inner(diff, diff) * ufl.dx)
+            error_form = form(ufl.inner(diff, diff) * dx_high)
             error_squared = assemble_scalar(error_form)
             return float(np.sqrt(error_squared))
 
         elif norm_type == "H1":
-            # ||e||_H1 = sqrt( Integral(e^2 + |grad(e)|^2) )
-            # The gradient of the difference is ufl.grad(diff)
-            # The magnitude squared of the gradient is ufl.inner(ufl.grad(diff), ufl.grad(diff))
+            # H1 error includes the gradient
+            # grad(diff) = grad(uh) - grad(u_exact_expr)
+            grad_diff = ufl.grad(diff)
 
-            # Integrand: (e * e) + (grad(e) . grad(e))
-            # integrand = ufl.inner(ufl.grad(diff), ufl.grad(diff))
+            integrand = ufl.inner(diff, diff) + ufl.inner(grad_diff, grad_diff)
 
-            integrand = ufl.inner(diff, diff) + ufl.inner(
-                ufl.grad(diff), ufl.grad(diff)
-            )
-
-            error_form = form(integrand * ufl.dx)
+            error_form = form(integrand * dx_high)
             error_squared = assemble_scalar(error_form)
             return float(np.sqrt(error_squared))
 
         elif norm_type == "Linf":
-            # Compute discrete L∞ error at vertices
-            return float(np.max(np.abs(diff.x.array)))
+            # For Linf, your vertex-based approach is usually acceptable
+            # as a lower bound approximation.
+            # To be rigorous, you'd check quadrature points, but that's expensive.
+            u_exact_fun = Function(self.V)
+            # Interpolate just for Linf diff on vertices
+            expr = Expression(u_exact_expr, self.V.element.interpolation_points())
+            u_exact_fun.interpolate(expr)
+            vertex_diff = self.uh.x.array - u_exact_fun.x.array
+            return float(np.max(np.abs(vertex_diff)))
 
         else:
             raise ValueError("norm_type must be 'L2', 'Linf', or 'H1'")
