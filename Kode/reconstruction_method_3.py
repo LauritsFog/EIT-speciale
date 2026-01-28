@@ -3,10 +3,10 @@ from inner_reconstruction_method import *
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import LinearSegmentedColormap
+from scipy.linalg import eigvals
 
-
-def compute_reconstruction_test_values_partial(
-    mesh, gradients, ntd_AD, ntd_A0, rho, element_list
+def compute_rhos(
+    mesh, gradients, ntd_AD, ntd_A0, alpha
 ):
     """
     Compute inclusion indices by processing mesh partitions sequentially.
@@ -18,9 +18,7 @@ def compute_reconstruction_test_values_partial(
     num_elements = mesh.topology.index_map(tdim).size_local
 
     N = np.shape(ntd_A0)[0]
-    min_eig_indices = []
-    min_eig_values = []
-    frechet_quantity_values = []
+    rhos = []
 
     if N > 16:
         frechet_mode_sample_idx = 8
@@ -29,7 +27,7 @@ def compute_reconstruction_test_values_partial(
 
     # print(f"Sampling Frechet quantity at mode index {frechet_mode_sample_idx}")
 
-    for elem in element_list:
+    for elem in range(num_elements):
         verts = mesh.geometry.x[connectivity.links(elem)][:, :2]
         v0, v1, v2 = verts
         area = 0.5 * abs(
@@ -45,75 +43,31 @@ def compute_reconstruction_test_values_partial(
                 if i != j:
                     Dfrechet[j, i] = Dfrechet[i, j]
 
-        check = rho * Dfrechet - ntd_AD + ntd_A0
-        check = (check + check.T) / 2  # ensure symmetry
-        min_eig = np.min(np.real(np.linalg.eigvals(check)))
+        evs = eigvals(- ntd_AD + ntd_A0 + alpha*np.eye(N),-Dfrechet)
+        revs = np.real(evs)
+        rhos.append(np.min(revs[revs>0]))
 
-        idx = round(N / 2 + frechet_mode_sample_idx)
-        frechet_quantity = np.abs(Dfrechet[idx, idx])
-
-        min_eig_values.append(min_eig)
-        frechet_quantity_values.append(frechet_quantity)
-        min_eig_indices.append(elem)
-
-    min_eig_values = np.asarray(min_eig_values, dtype=float)
-    frechet_quantity_values = np.asarray(frechet_quantity_values, dtype=float)
-
-    eigenvalue_dict = dict(zip(min_eig_indices, min_eig_values))
-    frechet_quantity_dict = dict(zip(min_eig_indices, frechet_quantity_values))
-
-    return eigenvalue_dict, frechet_quantity_dict
+    return rhos
 
 
-def reconstruction2(
+def reconstruction3(
     mesh,
     gradients,
     ntd_AD,
     ntd_A0,
-    alpha,
-    rho0,
-    rho_step,
-    max_it=100,
-    minimum_inclusions=1,
-    print_output=True
+    alpha
 ):
     # list of element indices
     tdim = mesh.topology.dim
     num_elements = mesh.topology.index_map(tdim).size_local
-    active_elements = list(range(num_elements))
     inclusion_counter = np.zeros(num_elements, dtype=int)
 
-    rho = rho0
-    done = False
 
-    for it in range(max_it):
-        if print_output:
-            if it % 10 == 0:
-                print(f"Iteration {it}, active_elements={len(active_elements)}")
+    rhos = compute_rhos(
+        mesh, gradients, ntd_AD, ntd_A0, alpha
+    )
 
-        ev_dict, _ = compute_reconstruction_test_values_partial(
-            mesh, gradients, ntd_AD, ntd_A0, rho, active_elements
-        )
-
-        inclusion_indices = reconstruct_inclusions(ev_dict, alpha)
-        if len(inclusion_indices) < minimum_inclusions:
-            print(f"Total iterations: {it + 1}")
-            done = True
-            break
-
-        # update counter
-        inclusion_counter[inclusion_indices] += 1
-
-        # update active elements
-        active_elements = inclusion_indices
-
-        # update rho
-        rho += rho_step
-
-    if not done:
-        print("Warning: Maximum iterations reached without convergence.")
-
-    return inclusion_counter
+    return rhos
 
 
 color_positions = [
@@ -124,7 +78,7 @@ color_positions = [
 custom_cmap = LinearSegmentedColormap.from_list("positioned_cmap", color_positions)
 
 
-def plot_method_2(mesh, inclusion_counter, colormap=None):
+def plot_method_3(mesh, rhos, colormap=None):
     fig, ax = plt.subplots(figsize=(6, 6))
 
     # Plot the entire mesh
@@ -141,9 +95,9 @@ def plot_method_2(mesh, inclusion_counter, colormap=None):
     else:
         cmap = colormap
 
-    inclusion_indexes = np.arange(len(inclusion_counter))
+    inclusion_indexes = np.arange(len(rhos))
     # inclusion_indexes = (np.where(inclusion_counter > 0)[0]).tolist()
-    norm_counter = inclusion_counter / np.max(inclusion_counter)
+    norm_counter = rhos / np.max(rhos)
 
     for elem in inclusion_indexes:
         highlight_cell = cells[elem]
@@ -163,11 +117,11 @@ def plot_method_2(mesh, inclusion_counter, colormap=None):
         ax.add_patch(poly)
 
     sm = plt.cm.ScalarMappable(
-        cmap=cmap, norm=plt.Normalize(vmin=0, vmax=np.max(inclusion_counter))
+        cmap=cmap, norm=plt.Normalize(vmin=0, vmax=np.max(rhos))
     )
     sm.set_array([])
     cbar = plt.colorbar(sm, ax=ax)
-    cbar.set_label("Count", rotation=270, labelpad=15)
+    cbar.set_label("Probing constant", rotation=270, labelpad=15)
 
     # Set plot properties
     ax.set_aspect("equal")

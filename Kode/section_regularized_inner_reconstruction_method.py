@@ -22,6 +22,8 @@ from conductivity_functions import (
 )
 import numpy as np
 from reconstruction_method_2 import *
+import time
+from reconstruction_method_3 import *
 
 # %%
 
@@ -157,7 +159,6 @@ if np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD))) < 0:
     mu_2 = mu_2_vals[0]
 else:
     mu_2 = mu_2_vals[1]
-
 alpha_large = -mu_2 * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD)))
 # alpha_large = alpha_large_vals[0]
 
@@ -290,6 +291,7 @@ plt.savefig(
 delta = delta_vals[2]
 ntd_AD_noise = add_noise(ntd_AD, noise_level=delta, seed=seed)
 
+# %%
 eigenvalue_dict_noise, _ = compute_reconstruction_test_values(
     mesh=recon_mesh,
     gradients=gradients,
@@ -351,6 +353,7 @@ alpha_large = -mu_2 * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD_noise)))
 print(f"Algo 2 mu: {mu_2}")
 print(f"Algo 2 alpha: {alpha_large}")
 
+tic = time.perf_counter()
 inclusion_counter = reconstruction2(
     recon_mesh,
     gradients,
@@ -360,14 +363,27 @@ inclusion_counter = reconstruction2(
     rho0,
     rho_step,
     max_it=1000,
+    print_output=False
 )
+t2 = time.perf_counter()-tic
+print(f"Method 2 took {t2:.2f} seconds")
 
 fig, ax = plot_method_2(recon_mesh, inclusion_counter)
 plt.savefig(
     "Figures/Regularization_parameter/Method_2_recon_more_noise.pdf",
     bbox_inches="tight",
 )
+# %% ##### method 3 ######
+tic = time.perf_counter()
+rhos = reconstruction3(recon_mesh, gradients, ntd_AD_noise, ntd_A0, alpha_large)
+t3 = time.perf_counter()-tic
+print(f"Method 3 took {t3:.2f} seconds")
 
+fig, ax = plot_method_3(recon_mesh, rhos)
+plt.savefig(
+    "Figures/Regularization_parameter/Method_3_recon_more_noise.pdf",
+    bbox_inches="tight",
+)
 # %% #######################################
 
 delta = delta_vals[3]
@@ -443,7 +459,7 @@ inclusion_counter = reconstruction2(
     alpha_large,
     rho0,
     rho_step,
-    max_it=1000,
+    max_it=1000
 )
 
 fig, ax = plot_method_2(recon_mesh, inclusion_counter)
