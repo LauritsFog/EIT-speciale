@@ -5,9 +5,8 @@ from matplotlib import cm
 from matplotlib.colors import LinearSegmentedColormap
 from scipy.linalg import eigvals
 
-def compute_rhos(
-    mesh, gradients, ntd_AD, ntd_A0, alpha
-):
+
+def compute_rhos(mesh, gradients, ntd_AD, ntd_A0, alpha, pos_def=True):
     """
     Compute inclusion indices by processing mesh partitions sequentially.
     """
@@ -43,29 +42,25 @@ def compute_rhos(
                 if i != j:
                     Dfrechet[j, i] = Dfrechet[i, j]
 
-        evs = eigvals(- ntd_AD + ntd_A0 + alpha*np.eye(N),-Dfrechet)
-        revs = np.real(evs)
-        rhos.append(np.min(revs[revs>0]))
+        if pos_def:
+            evs = eigvals(ntd_A0 - ntd_AD + alpha * np.eye(N), -Dfrechet)
+            revs = np.real(evs)
+            rhos.append(np.min(revs[revs > 0]))
+        else:
+            evs = eigvals(ntd_AD - ntd_A0 + alpha * np.eye(N), Dfrechet)
+            revs = np.real(evs)
+            rhos.append(np.max(revs[revs < 0]))
 
     return rhos
 
 
-def reconstruction3(
-    mesh,
-    gradients,
-    ntd_AD,
-    ntd_A0,
-    alpha
-):
+def reconstruction3(mesh, gradients, ntd_AD, ntd_A0, alpha, pos_def=True):
     # list of element indices
     tdim = mesh.topology.dim
     num_elements = mesh.topology.index_map(tdim).size_local
     inclusion_counter = np.zeros(num_elements, dtype=int)
 
-
-    rhos = compute_rhos(
-        mesh, gradients, ntd_AD, ntd_A0, alpha
-    )
+    rhos = compute_rhos(mesh, gradients, ntd_AD, ntd_A0, alpha, pos_def=pos_def)
 
     return rhos
 
@@ -77,8 +72,17 @@ color_positions = [
 ]
 custom_cmap = LinearSegmentedColormap.from_list("positioned_cmap", color_positions)
 
+color_positions_neg_def = [
+    (0.0, "magenta"),  # 100% - magenta
+    (0.85, "yellow"),  # 15% - yellow
+    (1.0, "white"),  # 0% - white
+]
+custom_cmap_neg_def = LinearSegmentedColormap.from_list(
+    "positioned_cmap", color_positions_neg_def
+)
 
-def plot_method_3(mesh, rhos, colormap=None):
+
+def plot_method_3(mesh, rhos, pos_def=True, colormap=None):
     fig, ax = plt.subplots(figsize=(6, 6))
 
     # Plot the entire mesh
@@ -88,21 +92,36 @@ def plot_method_3(mesh, rhos, colormap=None):
     vertices = mesh.geometry.x
 
     # Create a colormap
+
     if colormap is None:
-        cmap = custom_cmap
+        if pos_def:
+            cmap = custom_cmap
+        else:
+            cmap = custom_cmap_neg_def
     elif isinstance(colormap, str):
         cmap = cm.get_cmap(colormap)
     else:
         cmap = colormap
 
     inclusion_indexes = np.arange(len(rhos))
-    # inclusion_indexes = (np.where(inclusion_counter > 0)[0]).tolist()
-    norm_counter = rhos / np.max(rhos)
+
+    # Define the Normalization object based on the data range BEFORE the loop
+    if pos_def:
+        # Maps 0 -> 0.0 (start of cmap) and max -> 1.0 (end of cmap)
+        norm = plt.Normalize(vmin=0, vmax=np.max(rhos))
+    else:
+        # Maps min (most negative) -> 0.0 and 0 -> 1.0
+        norm = plt.Normalize(vmin=np.min(rhos), vmax=0)
 
     for elem in inclusion_indexes:
         highlight_cell = cells[elem]
-        norm_value = norm_counter[elem]
-        color = cmap(norm_value)
+
+        # Get the raw value
+        raw_rho = rhos[elem]
+
+        # Use the norm object to transform raw_rho (e.g., -5) to a 0-1 float
+        color = cmap(norm(raw_rho))
+
         poly_highlight = plt.Polygon(
             vertices[highlight_cell][:, :2], fill=True, color=color, alpha=1.0
         )
@@ -116,9 +135,8 @@ def plot_method_3(mesh, rhos, colormap=None):
         )
         ax.add_patch(poly)
 
-    sm = plt.cm.ScalarMappable(
-        cmap=cmap, norm=plt.Normalize(vmin=0, vmax=np.max(rhos))
-    )
+    # Use the same norm for the ScalarMappable to ensure the colorbar matches the plot
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
     cbar = plt.colorbar(sm, ax=ax)
     cbar.set_label("Probing constant", rotation=270, labelpad=15)

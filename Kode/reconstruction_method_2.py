@@ -6,7 +6,7 @@ from matplotlib.colors import LinearSegmentedColormap
 
 
 def compute_reconstruction_test_values_partial(
-    mesh, gradients, ntd_AD, ntd_A0, rho, element_list
+    mesh, gradients, ntd_AD, ntd_A0, rho, element_list, pos_def=True
 ):
     """
     Compute inclusion indices by processing mesh partitions sequentially.
@@ -45,7 +45,11 @@ def compute_reconstruction_test_values_partial(
                 if i != j:
                     Dfrechet[j, i] = Dfrechet[i, j]
 
-        check = rho * Dfrechet - ntd_AD + ntd_A0
+        if pos_def:
+            check = ntd_A0 + rho * Dfrechet - ntd_AD
+        else:
+            check = ntd_AD - (ntd_A0 + rho * Dfrechet)
+
         check = (check + check.T) / 2  # ensure symmetry
         min_eig = np.min(np.real(np.linalg.eigvals(check)))
 
@@ -75,7 +79,8 @@ def reconstruction2(
     rho_step,
     max_it=100,
     minimum_inclusions=1,
-    print_output=True
+    print_output=True,
+    pos_def=True,
 ):
     # list of element indices
     tdim = mesh.topology.dim
@@ -92,7 +97,7 @@ def reconstruction2(
                 print(f"Iteration {it}, active_elements={len(active_elements)}")
 
         ev_dict, _ = compute_reconstruction_test_values_partial(
-            mesh, gradients, ntd_AD, ntd_A0, rho, active_elements
+            mesh, gradients, ntd_AD, ntd_A0, rho, active_elements, pos_def=pos_def
         )
 
         inclusion_indices = reconstruct_inclusions(ev_dict, alpha)

@@ -20,11 +20,11 @@ def add_noise(ntd_matrix, noise_level, seed=None):
     ntd_matrix_noise : np.ndarray
         The symmetrized, noisy matrix.
     """
-    if seed is not None:
-        np.random.seed(seed)
+
+    rng = np.random.default_rng(seed)
 
     # 1. Generate relative noise factors Y_ij ~ N(0, noise_level^2)
-    relative_noise = np.random.normal(loc=0.0, scale=noise_level, size=ntd_matrix.shape)
+    relative_noise = rng.normal(loc=0.0, scale=noise_level, size=ntd_matrix.shape)
 
     # 2. Apply noise component-wise: V_noisy = V + V * Y
     # N_ij = V_ij * Y_ij
@@ -34,7 +34,9 @@ def add_noise(ntd_matrix, noise_level, seed=None):
     # 3. Symmetrize the result
     ntd_matrix_noise = 0.5 * (ntd_matrix_temp + ntd_matrix_temp.T)
 
-    return ntd_matrix_noise
+    relative_noise = np.linalg.norm(noise_component, 2) / np.linalg.norm(ntd_matrix)
+
+    return ntd_matrix_noise, relative_noise
 
 
 def precompute_gradients(solutions, mesh):
@@ -90,11 +92,7 @@ def precompute_gradients(solutions, mesh):
 
 
 def compute_reconstruction_test_values(
-    mesh,
-    gradients,
-    ntd_AD,
-    ntd_A0,
-    rho,
+    mesh, gradients, ntd_AD, ntd_A0, rho, pos_def=True
 ):
     """
     Compute inclusion indices by processing mesh partitions sequentially.
@@ -135,9 +133,13 @@ def compute_reconstruction_test_values(
 
                 if i != j:
                     Dfrechet[j, i] = Dfrechet[i, j]
+        if pos_def:
+            check = ntd_A0 + rho * Dfrechet - ntd_AD
+        else:
+            check = ntd_AD - (ntd_A0 + rho * Dfrechet)
 
-        check = ntd_A0 + rho * Dfrechet - ntd_AD
         check = (check + check.T) / 2  # ensure symmetry
+
         min_eig = np.min(np.real(np.linalg.eigvals(check)))
 
         idx = round(N / 2 + frechet_mode_sample_idx)

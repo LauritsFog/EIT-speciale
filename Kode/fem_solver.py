@@ -105,7 +105,9 @@ class FemConductivitySolver:
         # Coordinates of boundary vertices
         self.boundary_coords = coords_all[self.boundary_vertices]
 
-    def set_conductivity(self, conductivity_func, background_conductivity_func):
+    def set_conductivity(
+        self, conductivity_func, background_conductivity_func, pos_def=True
+    ):
         """
          Set the conductivity tensor and tag inclusions based on the
          positive definiteness of (A_D - A_0 - cI).
@@ -187,7 +189,10 @@ class FemConductivitySolver:
             ):
                 continue  # Skip identical conductivities
 
-            c_new = min(np.linalg.eigvals(A_D)) - max(np.linalg.eigvals(A_0))
+            if pos_def:
+                c_new = min(np.linalg.eigvals(A_D)) - max(np.linalg.eigvals(A_0))
+            else:
+                c_new = min(np.linalg.eigvals(A_0)) - max(np.linalg.eigvals(A_D))
             c = min(c, c_new)
 
         # Check if c a real number. If not, then A_D = A_0 and there are no inclusions.
@@ -201,7 +206,10 @@ class FemConductivitySolver:
                 b11, b12, b22 = background_conductivity_func(x_m, y_m)
                 A_0 = np.array([[b11, b12], [b12, b22]])
 
-                A_diff = A_D - A_0 - c * Id
+                if pos_def:
+                    A_diff = A_D - A_0 - c * Id
+                else:
+                    A_diff = A_0 - A_D - c * Id
 
                 # Mark inclusion if det(A_diff) >= 0
                 if min(np.real(np.linalg.eigvals(A_diff))) >= 0:
@@ -391,7 +399,7 @@ class FemConductivitySolver:
 
             x = ufl.SpatialCoordinate(self.mesh)
             theta = ufl.atan2(x[1], x[0])
-            nc_mode = ufl.cos(n * theta)
+            nc_mode = ufl.cos(n * theta)  # * (1 / np.sqrt(np.pi))
 
             self.assemble_system(neumann_cond=nc_mode)
             self.solve_system()
@@ -408,7 +416,7 @@ class FemConductivitySolver:
 
             x = ufl.SpatialCoordinate(self.mesh)
             theta = ufl.atan2(x[1], x[0])
-            nc_mode = ufl.sin(n * theta)
+            nc_mode = ufl.sin(n * theta)  # * (1 / np.sqrt(np.pi))
 
             self.assemble_system(neumann_cond=nc_mode)
             self.solve_system()

@@ -32,7 +32,7 @@ from reconstruction_method_2 import *
 
 seed = np.random.seed()
 
-characteristic_length = 0.01
+characteristic_length = 0.005
 recon_h = 0.05
 
 mu_2_vals = [1.01, 0.99]  # Positive vs negative alpha
@@ -138,9 +138,7 @@ for max_freq in max_freq_vals:
     if len(recon_inclusion_optim) > 0:
         plot_highlighted_eigenvalues(recon_mesh, recon_inclusion_optim, eigenvalue_dict)
 
-        plt.savefig(
-            f"Figures/Regularization_parameter/Optimal_alpha_recon_trunc_{max_freq}.pdf"
-        )
+        plt.savefig(f"Figures/Truncation/Optimal_alpha_recon_trunc_{max_freq}.pdf")
 
     rho0 = 0.1
     rho_step = 0.5
@@ -161,7 +159,7 @@ for max_freq in max_freq_vals:
 
     fig, ax = plot_method_2(recon_mesh, inclusion_counter)
     plt.savefig(
-        f"Figures/Regularization_parameter/Method_2_trunc_{max_freq}.pdf",
+        f"Figures/Truncation/Method_2_trunc_{max_freq}.pdf",
         bbox_inches="tight",
     )
 
