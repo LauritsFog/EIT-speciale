@@ -29,15 +29,12 @@ from reconstruction_method_2 import *
 # Frechet derivative DLambda(A0;c(alpha/beta)^2 I) with test
 # LambdaAD - LambdaA0 - DLambda(A0;c(alpha/beta)^2 I) <= 0
 
-
-seed = np.random.seed()
-
 characteristic_length = 0.005
 recon_h = 0.05
 
 mu_2_vals = [1.01, 0.99]  # Positive vs negative alpha
 
-max_freq_vals = [5, 10, 15, 20]
+max_freq_vals = [5]  # , 10, 15, 20]
 
 shape_choice = "smiley"
 
@@ -72,6 +69,10 @@ mesh = solverA0.mesh
 solverAD = FemConductivitySolver(mesh=mesh)
 c, alpha, beta = solverAD.set_conductivity(AD_fun, A0_fun)
 
+# AD-A0 >= cI and alpha I <= AD <= beta I
+
+rho = c * (alpha**2) / (beta**2)
+
 print(f"c = {c}, alpha = {alpha}, beta = {beta}")
 
 opt_mu_vals = []
@@ -82,10 +83,6 @@ for max_freq in max_freq_vals:
     solverAD.compute_ntd_map(max_freq=max_freq)
 
     recon_basis_solutions = interpolate_solutions_to_new_mesh(solverA0, recon_solver)
-
-    # AD-A0 >= cI and alpha I <= AD <= beta I
-
-    rho = c * (alpha**2) / (beta**2)
 
     ntd_A0 = solverA0.ntd_matrix
     ntd_AD = solverAD.ntd_matrix
@@ -107,9 +104,9 @@ for max_freq in max_freq_vals:
     recon_errors_reg = []
     alpha_regs = []
     if np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD))) < 0:
-        mus = np.linspace(1, 1.0001, 1000)
+        mus = np.linspace(1, 1.0001, 5000)
     else:
-        mus = np.linspace(0.9999, 1, 1000)
+        mus = np.linspace(0.999, 1, 5000)
 
     for mu in mus:
         alpha_reg = -mu * np.min(np.real(np.linalg.eigvals(ntd_A0 - ntd_AD)))
@@ -163,6 +160,7 @@ for max_freq in max_freq_vals:
         bbox_inches="tight",
     )
 
+plt.show()
 
 print(f"Optimal mu without noise: {opt_mu_vals}")
 print(f"Optimal alpha without noise: {opt_alpha_vals}")

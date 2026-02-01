@@ -474,61 +474,6 @@ class FemConductivitySolver:
         # Return the plot objects WITHOUT showing
         return fig, ax
 
-    def plot_exact_solution(self, exact_solution, title="Exact solution u_exact"):
-        """
-        Plot an exact UFL solution u_exact(x, y) on the FEM mesh.
-
-        Parameters
-        ----------
-        exact_solution : callable
-            A function that takes UFL symbols (x, y) and returns a UFL expression.
-            Example:
-                def u_exact(x, y):
-                    return ufl.sqrt(x**2 + y**2) * ufl.cos(2*ufl.atan_2(y, x))
-        title : str, optional
-            Title for the plot.
-
-        Returns
-        -------
-        fig, ax : matplotlib Figure and Axes
-        """
-
-        # Define symbolic coordinates
-        x = ufl.SpatialCoordinate(self.mesh)
-        u_expr = exact_solution(x[0], x[1])
-
-        # Interpolate the UFL expression into FEM space
-        u_exact_fun = Function(self.V)
-        expr = Expression(u_expr, self.V.element.interpolation_points())
-        u_exact_fun.interpolate(expr)
-
-        # Get mesh coordinates and cells
-        coords = self.mesh.geometry.x.copy()
-        topology = self.mesh.topology
-        tdim = topology.dim
-        if topology.connectivity(tdim, 0) is None:
-            topology.create_connectivity(tdim, 0)
-        cells = topology.connectivity(tdim, 0).array.reshape(-1, tdim + 1)
-
-        # Extract (x, y) and function values
-        xvals = coords[:, 0]
-        yvals = coords[:, 1]
-        u_vals = u_exact_fun.x.array.real
-
-        # Plot using Matplotlib triangulation
-        triang = tri.Triangulation(xvals, yvals, cells)
-        fig, ax = plt.subplots(figsize=(6, 5))
-
-        cont = ax.tricontourf(triang, u_vals, levels=100, cmap="RdBu")
-        ax.tricontour(triang, u_vals, levels=50, colors="k", linewidths=0.5)
-        ax.set_xlabel("$x_1$")
-        ax.set_ylabel("$x_2$")
-        ax.set_title(title)
-        ax.axis("equal")
-        fig.colorbar(cont, ax=ax, label="u")
-
-        return fig, ax
-
     def plot_boundary_solution_with_neumann_cond(
         self, title="Boundary solution and Neumann condition"
     ):

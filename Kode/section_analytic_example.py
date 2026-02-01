@@ -22,139 +22,6 @@ from inner_reconstruction_method import (
 # %%
 
 
-# def compute_solution_coefficients(r1, r2, n, polar_mats):
-#     """
-#     Compute coefficients [alpha1, alpha2, beta2, alpha3, beta3]
-#     for a 3-layer radially anisotropic disk with Neumann BC.
-
-#     Parameters
-#     a_thetaa_thetaa_theta-
-#     r1, r2 : float
-#         Radii separating layers (0 < r1 < r2 < 1)
-#     n : int
-#         Fourier mode index (n ≠ 0)
-#     polar_mats : list of 3 tuples
-#         Each tuple is the diagonal polar conductivity matrix for one layer:
-#         [(a_r1, a_theta1), (a_r2, a_theta2), (a_r3, a_theta3)]
-
-#     Returns
-#     a_thetaa_theta-
-#     coeffs_AD : ndarray
-#         [alpha_1, alpha_2, beta_2, alpha_3, beta_3]
-#     """
-#     m = abs(n)
-
-#     # Extract radial and tangential conductivities
-#     a_r = np.array([s[0] for s in polar_mats])
-#     a_theta = np.array([s[1] for s in polar_mats])
-
-#     # Anisotropy parameter
-#     kappa = np.sqrt(a_theta / a_r)
-
-#     # Precompute powers
-#     r1_k1 = r1 ** (kappa[0] * m)
-#     r1_k2 = r1 ** (kappa[1] * m)
-#     r2_k2 = r2 ** (kappa[1] * m)
-#     r2_k3 = r2 ** (kappa[2] * m)
-
-#     # Unknowns: [alpha1, alpha2, beta2, alpha3, beta3]
-#     A = np.zeros((5, 5))
-#     b = np.zeros(5)
-
-#     # a_theta Interface 1↔2 (continuity) a_theta
-#     A[0, 0] = r1_k1
-#     A[0, 1] = -r1_k2
-#     A[0, 2] = -(r1 ** (-kappa[1] * m))
-
-#     # a_theta Interface 1↔2 (flux continuity) a_theta
-#     A[1, 0] = a_r[0] * kappa[0] * r1 ** (kappa[0] * m - 1)
-#     A[1, 1] = -a_r[1] * kappa[1] * r1 ** (kappa[1] * m - 1)
-#     A[1, 2] = a_r[1] * kappa[1] * r1 ** (-kappa[1] * m - 1)
-
-#     # a_theta Interface 2↔3 (continuity) a_theta
-#     A[2, 1] = r2_k2
-#     A[2, 2] = r2 ** (-kappa[1] * m)
-#     A[2, 3] = -r2_k3
-#     A[2, 4] = -(r2 ** (-kappa[2] * m))
-
-#     # a_theta Interface 2↔3 (flux continuity) a_theta
-#     A[3, 1] = a_r[1] * kappa[1] * r2 ** (kappa[1] * m - 1)
-#     A[3, 2] = -a_r[1] * kappa[1] * r2 ** (-kappa[1] * m - 1)
-#     A[3, 3] = -a_r[2] * kappa[2] * r2 ** (kappa[2] * m - 1)
-#     A[3, 4] = a_r[2] * kappa[2] * r2 ** (-kappa[2] * m - 1)
-
-#     # a_theta Neumann BC a_theta
-#     A[4, 3] = a_r[2] * kappa[2] * m
-#     A[4, 4] = -a_r[2] * kappa[2] * m
-#     b[4] = 1.0
-
-#     coeffs_AD = np.linalg.solve(A, b)
-#     coeffs_AD = coeffs_AD.tolist()
-#     coeffs_AD = [
-#         (coeffs_AD[0], 0.0),
-#         (coeffs_AD[1], coeffs_AD[2]),
-#         (coeffs_AD[3], coeffs_AD[4]),
-#     ]
-#     return coeffs_AD
-
-# def exact_solution(x, y, n, radii, coeffs_AD, ks):
-#     """
-#     UFL version of the layered analytic solution:
-#     u_n(x,y) = v_n(r) * cos(n * theta)  (real-valued)
-
-#     Parameters
-#     ----------
-#     x, y : UFL expressions
-#         Symbolic coordinates (from ufl.SpatialCoordinate()).
-#     n : int
-#         Fourier mode number.
-#     radii : list or tuple of floats
-#         Layer boundaries [r1, r2, ...].
-#     coeffs_AD : list of tuples
-#         [(alpha1, beta1), (alpha2, beta2), (alpha3, beta3), ...].
-#     ks : list of floats
-#         Anisotropy exponents k_j for each layer.
-
-#     Returns
-#     -------
-#     u_expr : UFL expression
-#         Symbolic real-valued expression for u(x, y).
-#     """
-#     r = ufl.sqrt(x**2 + y**2)
-#     theta = ufl.atan2(y, x)
-#     m = abs(n)
-
-#     # Initialize v_expr
-#     v_expr = 0.0
-
-#     r1, r2 = radii
-
-#     # Layer 1
-#     cond = ufl.ge(r, r2)  # r >= r_2
-#     alpha_1, beta_1 = coeffs_AD[2]
-#     k_1 = ks[2]
-#     v_1 = alpha_1 * r ** (k_1 * m) + beta_1 * r ** (-k_1 * m)
-#     v_expr += ufl.conditional(cond, v_1, 0)
-
-#     # Layer 2
-#     cond = ufl.And(ufl.ge(r, r1), ufl.lt(r, r2))  # r_1 <= r < r_2
-#     alpha_2, beta_2 = coeffs_AD[1]
-#     k_2 = ks[1]
-#     v_2 = alpha_2 * r ** (k_2 * m) + beta_2 * r ** (-k_2 * m)
-#     v_expr += ufl.conditional(cond, v_2, 0)
-
-#     # Layer 3
-#     cond = ufl.lt(r, r1)  # r < r_1
-#     alpha_3, beta_3 = coeffs_AD[0]
-#     k_3 = ks[0]
-#     v_3 = alpha_3 * r ** (k_3 * m) + beta_3 * r ** (-k_3 * m)
-#     v_expr += ufl.conditional(cond, v_3, 0)
-
-#     # Real-valued field (cosine mode)
-#     u_expr = v_expr * ufl.cos(n * theta)
-#     return u_expr
-
-
 def estimate_convergence_rate(h_values, error_values):
     """
     Fits the power law E = C * h^k to the data.
@@ -451,6 +318,90 @@ def exact_solution(x, y, n, r1, coeffs_AD, ks):
     return u_expr
 
 
+def exact_solution_numpy(x, y, n, r1, coeffs_AD, ks):
+    """
+    NumPy version of the analytic solution for plotting.
+    Uses np.where instead of ufl.conditional.
+    """
+    # Use numpy functions instead of ufl
+    r = np.sqrt(x**2 + y**2)
+    theta = np.arctan2(y, x)
+    m = abs(n)
+
+    # --- Layer 2: Outer Ring (r >= r1) ---
+    alpha_2, beta_2 = coeffs_AD[1]
+    k_2 = ks[1]
+    v_2 = alpha_2 * r ** (k_2 * m) + beta_2 * r ** (-k_2 * m)
+
+    # --- Layer 1: Inner Disk (r < r1) ---
+    alpha_1, beta_1 = coeffs_AD[0]
+    k_1 = ks[0]
+    v_1 = alpha_1 * r ** (k_1 * m) + beta_1 * r ** (-k_1 * m)
+
+    # Combine using np.where (condition, true, false)
+    # This replaces ufl.conditional(ufl.ge(r, r1), v_2, v_1)
+    v_expr = np.where(r >= r1, v_2, v_1)
+
+    # Real-valued field
+    u_vals = v_expr * np.cos(n * theta)
+    return u_vals
+
+
+def plot_exact_solution_on_disk(
+    exact_solution, title="Exact solution u_exact", resolution=500
+):
+    """
+    Plots a function on the unit disk with both filled contours and contour lines.
+
+    IMPORTANT: 'exact_solution' must use numpy functions (np.sqrt, np.sin),
+    NOT ufl functions.
+    """
+    # 1. Create a grid over the unit square [-1, 1] x [-1, 1]
+    x = np.linspace(-1.0, 1.0, resolution)
+    y = np.linspace(-1.0, 1.0, resolution)
+    X, Y = np.meshgrid(x, y)
+
+    # 2. Mask the grid to form a unit disk
+    mask = X**2 + Y**2 <= 1.0
+
+    # Optional: Set outside points to NaN so they don't plot
+    X_masked = X.copy()
+    Y_masked = Y.copy()
+    X_masked[~mask] = np.nan
+    Y_masked[~mask] = np.nan
+
+    # 3. Evaluate the solution (Must use NumPy!)
+    Z = exact_solution(X, Y)
+    Z[~mask] = np.nan
+
+    # 4. Plot
+    fig, ax = plt.subplots(figsize=(6, 5))
+
+    # Filled contours (Color)
+    cont = ax.contourf(X, Y, Z, levels=200, cmap="RdBu")
+
+    # --- ADDED: Contour lines (Black) ---
+    # levels=20 defines how many lines to draw
+    # linewidths controls thickness
+    # alpha controls transparency
+    ax.contour(X, Y, Z, levels=50, colors="k", linewidths=0.5, alpha=0.5)
+
+    # Add unit circle border
+    circle = plt.Circle((0, 0), 1, color="k", fill=False, linewidth=1.0)
+    ax.add_artist(circle)
+
+    ax.set_xlabel("$x_1$")
+    ax.set_ylabel("$x_2$")
+    ax.set_title(title)
+    ax.axis("equal")
+    ax.set_xlim(-1.1, 1.1)
+    ax.set_ylim(-1.1, 1.1)
+
+    fig.colorbar(cont, ax=ax, label="u")
+
+    return fig, ax
+
+
 # %%
 
 ### Conductivity
@@ -495,7 +446,7 @@ modes = range(1, max_freq + 1)
 # Eigenmode frequency
 n = 3
 
-h_array = [0.06, 0.04, 0.02, 0.01, 0.005]
+h_array = [0.06]  # , 0.04, 0.02, 0.01, 0.005]
 h_array = np.array(h_array)
 
 recon_h = 0.06
@@ -505,7 +456,7 @@ recon_mesh = recon_solver.mesh
 eigenvalue_error_scaling = (h_array[0] * np.array(modes)) ** 2
 
 # Frechet quantity decay (must be smaller that max_freq)
-frechet_diag_mode = 8
+frechet_diag_mode = 9
 r = np.linspace(0, 1, 100)
 
 # Check inner most layer (layer 3) first.
@@ -531,7 +482,7 @@ coeffs_A0 = compute_solution_coefficients(r1, n, polar_conductivities_A0)
 
 # Visualization
 fig, axes = plot_conductivity_components(my_conductivity_AD, title="")
-plt.savefig("Figures/Analytic_example/Conductivity_distribution_analytic_example.pdf")
+# plt.savefig("Figures/Analytic_example/Conductivity_distribution_analytic_example.pdf")
 
 
 def u_exact_AD(x, y):
@@ -541,6 +492,13 @@ def u_exact_AD(x, y):
 def u_exact_A0(x, y):
     return exact_solution(x, y, n, r1, coeffs_A0, ks_A0)
 
+
+def u_exact_AD_numpy(x, y):
+    return exact_solution_numpy(x, y, n, r1, coeffs_AD, ks_AD)
+
+
+plot_exact_solution_on_disk(u_exact_AD_numpy, title="")
+plt.savefig("Figures/Analytic_example/Exact_solution_analytic_example.pdf")
 
 errors_AD = np.zeros((len(h_array), 1))
 errors_A0 = np.zeros((len(h_array), 1))
@@ -640,7 +598,9 @@ for i, cl in enumerate(h_array):
 
 # %%
 
-radial_frechet_decay = (h_array[-1] ** 2) * (np.abs(r) ** (k * 2 * frechet_diag_mode))
+radial_frechet_decay = (h_array[-1] ** 2) * (
+    np.abs(r) ** (k * 2 * frechet_diag_mode - 2)
+)
 
 c_AD, k_AD = estimate_convergence_rate(h_array, errors_AD.flatten())
 c_A0, k_A0 = estimate_convergence_rate(h_array, errors_A0.flatten())
@@ -721,7 +681,7 @@ ax.set_xlabel("Mesh size (h)")
 ax.set_ylabel("Absolute relative error (log scale)")
 ax.grid(True, which="both", linestyle="--", alpha=0.7)
 ax.legend()
-plt.savefig("Figures/Analytic_example/ND_map_smallest_eigenvalue_error_convergence.pdf")
+# plt.savefig("Figures/Analytic_example/ND_map_smallest_eigenvalue_error_convergence.pdf")
 
 ### Plot eigenvalue error for each mode
 
@@ -757,7 +717,7 @@ ax.set_ylabel("Absolute relative error (Log Scale)")
 ax.grid(True, which="both", ls="--")
 ax.legend()
 
-plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_AD.pdf")
+# plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_AD.pdf")
 
 idx_start = 8
 c_A0, k_A0 = estimate_convergence_rate(
@@ -791,7 +751,7 @@ ax.set_ylabel("Absolute relative error (Log Scale)")
 ax.grid(True, which="both", ls="--")
 ax.legend()
 
-plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_A0.pdf")
+# plt.savefig("Figures/Analytic_example/ND_eigenvalue_relative_error_scaling_A0.pdf")
 
 ### Plot signed eigenvalue error for each mode
 
@@ -813,7 +773,7 @@ ax.set_ylabel("Signed relative error")
 ax.grid(True, which="both", ls="--")
 ax.legend()
 
-# plt.savefig("ND_eigenvalue_signed_relative_error.pdf")
+# # plt.savefig("ND_eigenvalue_signed_relative_error.pdf")
 
 ### Plot frechet matrix eigenvalues
 
@@ -821,7 +781,7 @@ ax.legend()
 #     mesh, frechet_quantity, title="N'th diagonal element of the Frechet derivative"
 # )
 
-# plt.savefig("Frechet_derivative_plot.pdf")
+# # plt.savefig("Frechet_derivative_plot.pdf")
 
 ### Plot Frechet eigenvalues along radial line for the finest mesh
 
@@ -837,14 +797,14 @@ ax.semilogy(
     r,
     radial_frechet_decay,
     "k--",
-    label="O($r^{2kN}$)",
+    label="O($r^{2kN-2}$)",
 )
 ax.set_xlabel("Radial distance from center ($r$)")
 ax.set_ylabel("Absolute value of N'th diagonal element (log scale)")
 ax.legend()
 ax.grid(True)
 
-plt.savefig("Figures/Analytic_example/Frechet_diagonal_radial_decay.pdf")
+# plt.savefig("Figures/Analytic_example/Frechet_diagonal_radial_decay.pdf")
 
 ### Plot ND map eigenvalue decay
 
@@ -878,7 +838,7 @@ plt.savefig("Figures/Analytic_example/Frechet_diagonal_radial_decay.pdf")
 # solver_AD.solve_system()
 
 # solver_AD.plot_exact_solution(u_exact_AD, title="")
-# plt.savefig("Figures/Analytic_example/Exact_solution_analytic_example.pdf")
+# # plt.savefig("Figures/Analytic_example/Exact_solution_analytic_example.pdf")
 
 # ntd_AD, n_freqs = solver_AD.compute_ntd_map(max_freq=max_freq)
 
@@ -912,7 +872,7 @@ plt.savefig("Figures/Analytic_example/Frechet_diagonal_radial_decay.pdf")
 # ax.grid(True, which="both", ls="--")
 # ax.legend()
 
-# plt.savefig("Figures/Analytic_example/ND_eigenvalue_decay_AD.pdf")
+# # plt.savefig("Figures/Analytic_example/ND_eigenvalue_decay_AD.pdf")
 
 # plt.show()
 

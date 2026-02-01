@@ -109,7 +109,7 @@ def compute_reconstruction_test_values(
     frechet_quantity_values = []
 
     if N > 16:
-        frechet_mode_sample_idx = 8
+        frechet_mode_sample_idx = 9
     else:
         frechet_mode_sample_idx = 0
 
@@ -142,7 +142,7 @@ def compute_reconstruction_test_values(
 
         min_eig = np.min(np.real(np.linalg.eigvals(check)))
 
-        idx = round(N / 2 + frechet_mode_sample_idx)
+        idx = round(N / 2 - 1 + frechet_mode_sample_idx)
         frechet_quantity = np.abs(Dfrechet[idx, idx])
 
         min_eig_values.append(min_eig)
@@ -200,7 +200,7 @@ def compute_classification_error(mesh, target_indeces, recon_inclusion):
     target_set = set(target_indeces)
     reconstructed_set = set(recon_inclusion)
 
-    false_negatives = 2 * len(target_set - reconstructed_set)
+    false_negatives = len(target_set - reconstructed_set)
     false_positives = len(reconstructed_set - target_set)
 
     classification_error = false_negatives + false_positives
