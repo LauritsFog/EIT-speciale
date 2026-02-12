@@ -91,7 +91,7 @@ polar_conductivities_Atilde = [
 
 ### Setings
 
-h = 0.01
+h = 0.02
 
 max_freq = 10
 modes = range(1, max_freq + 1)
@@ -150,6 +150,6 @@ print(np.diag(ntd_Atilde))
 fig, axes = plot_conductivity_components(my_conductivity_A, title="A")
 
 fig, axes = plot_conductivity_components(my_conductivity_Atilde, title="")
-plt.savefig("Figures/Analytic_example/non_uniqueness_example.pdf")
+# plt.savefig("Figures/Analytic_example/non_uniqueness_example.pdf")
 
 plt.show()
